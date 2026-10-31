@@ -1,0 +1,20 @@
+# Build artifacts
+build/
+dist/
+main.build/
+main.dist/
+*.spec
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+.DS_Store
+runtime/mpv-2.dll
