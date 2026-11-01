@@ -1,22 +1,26 @@
-# Build artifacts
+# Build output
 build/
 dist/
 main.build/
 main.dist/
+main.onefile-build/
 *.spec
+nuitka-crash-report.xml
+*.xml
 
-# Python cache
+# Python
 __pycache__/
 *.pyc
 *.pyo
+venv/
+.venv/
+*-venv/
 
-# IDE files
+# The mpv library is downloaded separately (do not commit it)
+runtime/
+
+# Editors / OS
 .vscode/
 .idea/
-
-# OS files
 Thumbs.db
 .DS_Store
-runtime/mpv-2.dll
-
-*.xml

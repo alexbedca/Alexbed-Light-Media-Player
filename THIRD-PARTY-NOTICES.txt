@@ -1,0 +1,41 @@
+ALEXBED LIGHT MEDIA PLAYER (ALMP) - THIRD-PARTY NOTICES
+=======================================================
+
+ALMP itself is Copyright (C) 2026 Alexander Bediako and is released under the
+GNU General Public License, version 3 or later (see the file LICENSE).
+
+ALMP is built from, and ships together with, the free software listed below.
+Each component remains under its own licence. Together they form one program
+that is distributed under the GPL-3.0 terms.
+
+Component          Licence                                 Where to get the source
+-----------------  --------------------------------------  ---------------------------------------
+PyQt6              GPL v3 (or commercial from Riverbank)   https://www.riverbankcomputing.com/software/pyqt/
+Qt 6               LGPL v3 / GPL v3                        https://www.qt.io/download-open-source
+mpv / libmpv       GPL v2+ (LGPL v2.1+ for some builds)    https://github.com/mpv-player/mpv
+FFmpeg (in libmpv) LGPL v2.1+ / GPL v2+ depending on build https://ffmpeg.org/download.html
+python-mpv         GPL v2+ / LGPL v2.1+ (dual)             https://github.com/jaseg/python-mpv
+mutagen            GPL v2 or later                         https://github.com/quodlibet/mutagen
+Python             Python Software Foundation Licence      https://www.python.org
+Nuitka (build)     Apache License 2.0                      https://nuitka.net
+OpenSSL            Apache License 2.0                      https://www.openssl.org
+libffi             MIT                                     https://github.com/libffi/libffi
+Microsoft Visual C++ runtime (msvcp140.dll and similar) is redistributed under
+Microsoft's redistributable licence terms.
+
+SOURCE CODE
+-----------
+The complete source code of ALMP for every release is available at
+https://github.com/alexbedca/Alexbed-Light-Media-Player (see the release tag).
+
+The libmpv library (runtime\mpv-2.dll) in the release was downloaded from
+the official mpv project website (https://mpv.io/installation/), which points
+to their official Windows builds hosted on SourceForge. 
+Its source code is available from the mpv project on GitHub.
+
+NO WARRANTY
+-----------
+ALMP is provided "as is", without warranty of any kind. See the LICENSE file.
+
+(This file is a good-faith summary, not legal advice. Please check the exact
+licence of each component version you ship.)

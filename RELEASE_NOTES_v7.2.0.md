@@ -1,0 +1,33 @@
+# ALMP v7.2.0
+
+A visual and usability update, plus a licence fix.
+
+## New
+- **New dark interface** with cyan highlights and the new ALMP icon. The video now runs edge to edge.
+- **Floating fullscreen controls.** The control bar and a slide-in playlist drawer appear together and hide together after 3 seconds. The video no longer resizes.
+- **Playlist search** (Ctrl+F), a larger item counter, and buttons with icons.
+- **Large playlists load in batches** so the window stays responsive.
+- **Video size modes:** press `A` for Fit, Fill (crop) or Stretch.
+- **Interface size** option (100% - 200%) and **remembered settings** (volume, shuffle, loop, remove played).
+- Elapsed / total time next to the progress bar. Esc leaves fullscreen.
+- Faster start: the startup shortcut is only re-checked when ALMP has moved.
+- Initial Linux support (experimental).
+
+## Fixed
+- "Run at Startup" now points to the real `ALMP.exe` (it could point to a missing `python.exe`).
+- Delete confirmation text is no longer cut off.
+- Fullscreen title is no longer clipped and the exit-fullscreen button no longer covers the playlist.
+
+## Licence change
+ALMP is now released under the **GNU GPL v3 or later**. The previous releases said MIT, but ALMP
+ships with components that are GPL (PyQt6, mutagen, libmpv). See `LICENSE` and `THIRD-PARTY-NOTICES.txt`.
+
+## Corrections to earlier documentation
+- Removed the claim that ALMP "bypasses the Windows mixer". It does not.
+- Shuffle can repeat a track when "Remove played" is switched off.
+
+## Notes
+- ALMP is not code-signed, so Windows SmartScreen may ask for confirmation (More info > Run anyway).
+- **SHA-256 of the zip:** `[paste here]`
+
+Thank you to everyone testing and giving feedback.

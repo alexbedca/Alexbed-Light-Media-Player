@@ -1,122 +1,121 @@
 ====================================================================
                   ALEXBED LIGHT MEDIA PLAYER (ALMP)
 ====================================================================
-Version:       v7.1.0 (The "Studio" Edition)
-Release Date:  31 October 2026
+Version:       v7.2.0
 Developer:     Alexander Bediako
 Contact:       alexbedgh@gmail.com
-License:       MIT License (Free and Open Source)
+Website:       https://github.com/alexbedca/Alexbed-Light-Media-Player
+License:       GNU General Public License v3 or later (Free Software)
+
+ALMP is free and will stay free. It is built to help people who need
+an easy, no-cost media player.
 
 --------------------------------------------------------------------
 1. QUICK START (NO INSTALLATION REQUIRED)
 --------------------------------------------------------------------
-This is a 100% portable application. It does not require Python, 
-VLC, or any other software to be installed on your computer.
+This is a portable application. It does not need Python, VLC or any
+other software, and it does not need administrator rights.
 
-1. Extract the ZIP file to a folder on your PC.
+1. Extract the ZIP file to a folder on your PC (for example in
+   Documents). Do not run it from inside the ZIP.
 2. Open the "Alexbed Light Media Player (ALMP)" folder.
-3. Double-click "ALMP.exe" to launch the player.
-4. Drag and drop a folder (or individual files) directly into the 
-   window. The player will automatically start playing the first 
-   file if the playlist is empty.
+3. Double-click "ALMP.exe".
+4. Drag and drop a folder (or files) into the window. If the playlist
+   is empty, the first file starts playing automatically.
+
+If Windows shows "Windows protected your PC" (SmartScreen), click
+"More info" and then "Run anyway". ALMP is not code-signed, which is
+why Windows asks.
 
 --------------------------------------------------------------------
 2. HOW TO SET AS YOUR DEFAULT MEDIA PLAYER
 --------------------------------------------------------------------
-Microsoft has made it intentionally difficult for any app to 
-automatically become the "default" player for security reasons. 
-This is why you must confirm the choice yourself.
+Windows does not allow any program to change your default player
+silently, so you must confirm the choice yourself. This script makes
+it easy:
 
-We have provided a script to make this easy:
+1. Make sure the ALMP folder is on your computer (not on a USB stick).
+2. Double-click "Set-ALMP-Defaults.bat" and press "Y".
+3. The Windows "Default apps" page opens on ALMP.
+   - Windows 11: click "Set default" at the top, or click each type
+     (.mp3, .mp4 ...) and choose ALMP.
+   - Windows 10: click "Set this program as default".
 
-1. Open the "Alexbed Light Media Player (ALMP)" folder.
-2. Double-click "Set-ALMP-Defaults.bat".
-3. Press "Y" to continue when prompted.
-4. The Windows "Default apps" settings page will open, showing ALMP.
-5. Click the big "Set default" button at the top of the page (or 
-   click each extension like .mp3 and .mp4 and select ALMP).
-
-Note: If you move the ALMP folder to a different location later, 
-you must run the .bat file again so Windows knows the new path. 
-To undo this later, run "Remove-ALMP-Defaults.bat".
+If you move the ALMP folder later, run the .bat file again.
+To undo this, run "Remove-ALMP-Defaults.bat".
 
 --------------------------------------------------------------------
-3. HOW TO CREATE A DESKTOP SHORTCUT (AND FIX THE ICON)
+3. DESKTOP SHORTCUT (AND FIXING A BLANK ICON)
 --------------------------------------------------------------------
-Because this is a portable app, Windows sometimes shows a blank 
-icon if you just drag the EXE to your desktop. Here is how to fix it:
-
-1. Right-click "ALMP.exe" and select "Show more options" > 
-   "Create shortcut".
-2. Move the new shortcut to your Desktop.
-3. Right-click the shortcut and select "Properties".
-4. Click "Change Icon..." at the bottom.
-5. Click "Browse", select the "icon.ico" file inside the ALMP folder, 
-   and click OK.
-6. Rename the shortcut to "ALMP Media Player".
+1. Right-click "ALMP.exe" > "Show more options" > "Create shortcut".
+2. Move the shortcut to your Desktop.
+3. If the icon is blank: right-click the shortcut > Properties >
+   "Change Icon..." > Browse > pick "icon.ico" in the ALMP folder.
 
 --------------------------------------------------------------------
-4. KEY FEATURES
+4. FEATURES
 --------------------------------------------------------------------
-- Double-Click Playback: Once set as default, double-clicking a media
-  file will open it instantly in ALMP.
-- Single-Instance Mode: If ALMP is already open, double-clicking a new 
-  file will append it to the current playlist without opening a new window.
-- Smart Playlists: Drop new files into the window to APPEND them.
-- Remove from List: Don't want a file in your playlist? Click 
-  "Remove from List" to remove it without deleting the physical file.
-- True Random Shuffle: Picks a completely random track every time.
-- Album Art: Displays embedded cover art for MP3 and FLAC files.
-- High Performance: Handles playlists with 2000+ files without lag.
-- Hardware Decoding: Uses your GPU to play 4K videos smoothly.
-- IR Remote Support: Fully compatible with standard Windows Media Keys.
+- Plays most audio and video files, and .m3u / .m3u8 / .pls playlists.
+- Double-click playback once ALMP is your default player.
+- Single window: opening another file while ALMP is running adds it
+  to the same window.
+- Drag and drop files or folders to add them to the playlist.
+- Large playlists load in batches so the window stays responsive.
+- Search box: type to filter the playlist (Ctrl+F).
+- Shuffle, Loop 1, and "Remove played". Shuffle picks a random track
+  each time; with "Remove played" off, a track can repeat.
+- Album art from embedded tags (MP3, FLAC, M4A).
+- Hardware video decoding when your graphics card supports it.
+- Windows media keys (play/pause, next, previous) work.
+- Interface size: choose 100% - 200% in the playlist panel
+  (takes effect the next time you open ALMP).
+- Your volume, shuffle, loop, remove-played and interface size are
+  remembered between runs (saved in %APPDATA%\ALMP\settings.json).
 
 --------------------------------------------------------------------
-5. KEYBOARD & REMOTE SHORTCUTS
+5. KEYBOARD SHORTCUTS
 --------------------------------------------------------------------
-Spacebar .......... Play / Pause
-F ................. Toggle Fullscreen Mode
-Esc ............... Exit Fullscreen Mode
-Right Arrow ....... Seek forward 5 seconds
-Left Arrow ........ Seek backward 5 seconds
-Up / Down Arrows .. Increase / Decrease Volume
-PageUp / PageDown . Previous / Next Track
-M ................. Toggle Mute
+Space ............. Play / Pause
+F ................. Fullscreen on / off
+Esc ............... Leave fullscreen
+Left / Right ...... Seek 5 seconds back / forward
+Up / Down ......... Volume up / down
+Page Up / Down .... Previous / Next track
+M ................. Mute
+A ................. Video size: Fit, Fill (crop), Stretch
+P ................. Show / hide the playlist drawer (fullscreen)
+Ctrl+F ............ Search the playlist
+Double-click video  Fullscreen on / off
 
 --------------------------------------------------------------------
 6. IMPORTANT NOTES
 --------------------------------------------------------------------
-- Fullscreen Mode: Double-click the video to go fullscreen. The 
-  mouse cursor and control panels will auto-hide after 5 seconds. 
-  Move the mouse to reveal them. Click the "X" button in the top 
-  right to exit fullscreen.
-- Delete File vs Remove from List: "Delete File" PERMANENTLY deletes 
-  the file from your hard drive. "Remove from List" only removes it 
-  from the current playlist.
-- Run at Startup: Check this box in the app to automatically launch 
-  the player when Windows boots.
+- Fullscreen: move the mouse to show the control bar. If the playlist
+  drawer is open (button on the bar, or press P) it appears and hides
+  together with the bar after 3 seconds without movement. Leave
+  fullscreen with Esc, F, or the button at the right of the bar.
+- "Delete" PERMANENTLY deletes the file from your computer (it does
+  NOT go to the Recycle Bin). "Remove" only takes it off the playlist.
+- Run at Startup: tick this box to start ALMP when Windows starts.
+  If you move the folder, open ALMP once and it fixes the entry.
+- ALMP does not connect to the internet.
 
 --------------------------------------------------------------------
-7. LICENSE (MIT)
+7. LICENSE
 --------------------------------------------------------------------
+ALMP is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your
+option) any later version.
+
+ALMP is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+for more details. The full text is in the file "LICENSE".
+
+ALMP uses other free software (PyQt6, Qt, mpv, FFmpeg, mutagen and
+more). Their licences and where to get their source code are listed in
+"THIRD-PARTY-NOTICES.txt".
+
 Copyright (c) 2026 Alexander Bediako
-
-Permission is hereby granted, free of charge, to any person obtaining 
-a copy of this software and associated documentation files (the 
-"Software"), to deal in the Software without restriction, including 
-without limitation the rights to use, copy, modify, merge, publish, 
-distribute, sublicense, and/or sell copies of the Software, and to 
-permit persons to whom the Software is furnished to do so, subject 
-to the following conditions:
-
-The above copyright notice and this permission notice shall be 
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF 
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY 
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, 
-TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE 
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ====================================================================

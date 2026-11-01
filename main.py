@@ -1,7 +1,27 @@
+# Alexbed Light Media Player (ALMP)
+# Copyright (C) 2026 Alexander Bediako
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+__version__ = "7.2.0"
+
 import os
 import sys
 import random
 import subprocess
+import json
 import threading
 import time
 from pathlib import Path
@@ -10,6 +30,13 @@ from pathlib import Path
 if sys.platform == "win32":
     import ctypes
     import winreg
+
+# --- Linux: embed mpv through X11 ---
+# mpv draws into the Qt video widget by window id ("wid"). That only works when Qt
+# runs on X11 (xcb). On Wayland sessions (WSLg, Ubuntu default) Qt would use native
+# Wayland, mpv cannot embed and opens its own extra window (double title bars).
+if sys.platform.startswith("linux") and "QT_QPA_PLATFORM" not in os.environ and os.environ.get("DISPLAY"):
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 # --- Nuitka & PyInstaller Resource Path Engine ---
 def get_resource_path(relative_path):
@@ -20,6 +47,15 @@ def get_resource_path(relative_path):
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
+
+def get_app_icon_path():
+    """Windows uses icon.ico; Linux prefers icon.png (always loads), then icon.ico."""
+    names = ["icon.ico"] if sys.platform == "win32" else ["icon.png", "icon.ico"]
+    for n in names:
+        p = get_resource_path(n)
+        if os.path.exists(p):
+            return p
+    return ""
 
 # --- Real location of ALMP.exe (portable-safe) ---
 def _resolve_app_exe_path():
@@ -72,17 +108,17 @@ try:
 except Exception:
     pass
 
-from PyQt6.QtCore import Qt, QObject, pyqtSignal, QThread, QTimer, QEvent, QLockFile, QStandardPaths
+from PyQt6.QtCore import Qt, QSize, QPoint, QPointF, QRectF, QObject, pyqtSignal, QThread, QTimer, QEvent, QLockFile, QStandardPaths
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
-from PyQt6.QtGui import QIcon, QPixmap, QImage, QShortcut, QKeySequence
+from PyQt6.QtGui import QCursor, QColor, QPainter, QPen, QPolygonF, QFontMetrics, QIcon, QPixmap, QImage, QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QListWidget, QListWidgetItem, QFileDialog, QLabel,
-    QCheckBox, QMessageBox, QSplitter, QSlider, QComboBox, QDialog
+    QCheckBox, QMessageBox, QSplitter, QSlider, QComboBox, QDialog,
+    QGridLayout, QSizePolicy, QLineEdit
 )
 
 import mpv
-from mutagen import File as MutagenFile
 
 AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".oga", ".opus", ".wma",
@@ -127,8 +163,140 @@ APP_NAME = "AlexbedLightMediaPlayer"
 REGISTRY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 LINUX_AUTOSTART_DIR = Path.home() / ".config" / "autostart"
 LINUX_DESKTOP_FILE = LINUX_AUTOSTART_DIR / "almp.desktop"
-WIN_STARTUP_DIR = Path(os.getenv('APPDATA')) / r"Microsoft\Windows\Start Menu\Programs\Startup"
+WIN_STARTUP_DIR = Path(os.getenv('APPDATA') or Path.home()) / r"Microsoft\Windows\Start Menu\Programs\Startup"
 WIN_SHORTCUT = WIN_STARTUP_DIR / "ALMP.lnk"
+STARTUP_MARKER = Path(os.getenv("APPDATA") or Path.home()) / "ALMP" / "startup_target.txt"
+
+# --- Saved settings (volume, toggles, interface size) ---
+SETTINGS_PATH = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP" / "settings.json"
+SCALE_CHOICES = [("Normal (100%)", 1.0), ("Large (125%)", 1.25), ("Extra large (150%)", 1.5), ("Huge (200%)", 2.0)]
+
+def load_settings():
+    try:
+        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def save_settings(data):
+    try:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+# --- Crisp vector icons, drawn in code (no image files, any screen size) ---
+_ICON_CACHE = {}
+
+def make_icon(kind, color="#e6e6e6", px=20):
+    key = (kind, color, px)
+    if key in _ICON_CACHE:
+        return _ICON_CACHE[key]
+    from PyQt6.QtGui import QPixmap
+    dpr = 1.0
+    try:
+        dpr = float(QApplication.primaryScreen().devicePixelRatio())
+    except Exception:
+        pass
+    big = 96                      # draw large, then shrink smoothly
+    pm = QPixmap(big, big)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    u = big / 24.0                # 24 x 24 design grid
+    col = QColor(color)
+    pen = QPen(col)
+    pen.setWidthF(2.2 * u)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+
+    def pt(x, y):
+        return QPointF(x * u, y * u)
+
+    def poly(points):
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(col)
+        p.drawPolygon(QPolygonF([pt(x, y) for x, y in points]))
+
+    def line(*points):
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for a, b in zip(points, points[1:]):
+            p.drawLine(pt(*a), pt(*b))
+
+    def bar(x, y, w, h):
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(col)
+        p.drawRoundedRect(QRectF(x * u, y * u, w * u, h * u), 1.2 * u, 1.2 * u)
+
+    if kind == "play":
+        poly([(7, 4.5), (20, 12), (7, 19.5)])
+    elif kind == "pause":
+        bar(6.5, 4.5, 4, 15); bar(13.5, 4.5, 4, 15)
+    elif kind == "prev":
+        poly([(19, 5), (9, 12), (19, 19)]); bar(4.5, 5, 3, 14)
+    elif kind == "next":
+        poly([(5, 5), (15, 12), (5, 19)]); bar(16.5, 5, 3, 14)
+    elif kind == "fullscreen":      # corners point OUT = enter fullscreen
+        line((4, 9), (4, 4), (9, 4)); line((15, 4), (20, 4), (20, 9))
+        line((4, 15), (4, 20), (9, 20)); line((20, 15), (20, 20), (15, 20))
+    elif kind == "exitfullscreen":  # corners point IN = leave fullscreen
+        line((9, 4), (9, 9), (4, 9)); line((15, 4), (15, 9), (20, 9))
+        line((4, 15), (9, 15), (9, 20)); line((20, 15), (15, 15), (15, 20))
+    elif kind == "close":
+        line((6, 6), (18, 18)); line((18, 6), (6, 18))
+    elif kind == "playlist":
+        line((4, 6), (20, 6)); line((4, 12), (20, 12)); line((4, 18), (13, 18))
+    elif kind == "search":
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QRectF(4 * u, 4 * u, 12 * u, 12 * u)); line((14.5, 14.5), (20, 20))
+    elif kind == "volume":
+        poly([(3.5, 9), (8, 9), (13, 4.8), (13, 19.2), (8, 15), (3.5, 15)])
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawArc(QRectF(10 * u, 7.5 * u, 9 * u, 9 * u), -50 * 16, 100 * 16)
+    p.end()
+
+    pm = pm.scaled(int(px * dpr), int(px * dpr), Qt.AspectRatioMode.KeepAspectRatio,
+                   Qt.TransformationMode.SmoothTransformation)
+    pm.setDevicePixelRatio(dpr)
+    icon = QIcon(pm)
+    _ICON_CACHE[key] = icon
+    return icon
+
+class FullscreenTitlePill(QWidget):
+    """Rounded, slightly see-through 'now playing' pill shown over fullscreen video.
+    Painted by hand so the rounded background always draws."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowTransparentForInput | Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self._text = ""
+
+    def setText(self, text):
+        self._text = text
+        self.update()
+
+    def text(self):
+        return self._text
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = rect.height() / 2.0
+        painter.setPen(QPen(QColor(255, 255, 255, 45), 1))
+        painter.setBrush(QColor(18, 18, 18, 225))
+        painter.drawRoundedRect(rect, radius, radius)
+        font = self.font()
+        font.setPixelSize(18)
+        painter.setFont(font)
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._text)
+        painter.end()
+
 
 class PlayerEventBridge(QObject):
     end_file = pyqtSignal(str)
@@ -173,13 +341,17 @@ class CustomConfirmDialog(QDialog):
     def __init__(self, parent, title, message):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        if sys.platform == "win32":
+            # Always-on-top dialogs behave badly under X11/WSLg window managers
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setFixedWidth(500)
+        self.setMinimumWidth(500)
         
         layout = QVBoxLayout(self)
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)  # grow to fit the text
         lbl = QLabel(message)
         lbl.setWordWrap(True)
+        lbl.setMinimumWidth(460)
         lbl.setStyleSheet("font-size: 14px; padding: 10px;")
         layout.addWidget(lbl)
         
@@ -238,8 +410,8 @@ class MediaWindow(QMainWindow):
         self.setWindowTitle("Alexbed Light Media Player")
         self.resize(1200, 700)
 
-        icon_file_path = get_resource_path("icon.ico")
-        if os.path.exists(icon_file_path):
+        icon_file_path = get_app_icon_path()
+        if icon_file_path:
             self.setWindowIcon(QIcon(icon_file_path))
 
         self.setAcceptDrops(True)
@@ -263,16 +435,17 @@ class MediaWindow(QMainWindow):
         self.ipc_server = None
 
         self.track_timer = QTimer(self)
-        self.track_timer.setInterval(200)
+        self.track_timer.setInterval(250)
         self.track_timer.timeout.connect(self._poll_player_metrics)
 
         self.hide_timer = QTimer(self)
-        self.hide_timer.setInterval(5000) 
+        self.hide_timer.setInterval(3000) 
         self.hide_timer.timeout.connect(self._hide_fullscreen_overlays)
 
         self._build_ui()
         self._setup_shortcuts()
         self._init_player()
+        self._apply_settings()
 
         self.installEventFilter(self)
         QTimer.singleShot(100, self._force_focus)
@@ -337,12 +510,67 @@ class MediaWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_PageUp), self, activated=self.previous_track)
         QShortcut(QKeySequence(Qt.Key.Key_PageDown), self, activated=self.next_track)
         QShortcut(QKeySequence(Qt.Key.Key_M), self, activated=self._toggle_mute)
+        QShortcut(QKeySequence(Qt.Key.Key_A), self, activated=self._cycle_aspect)
+        QShortcut(QKeySequence(Qt.Key.Key_P), self, activated=self._toggle_fs_playlist)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_search)
+        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, activated=lambda: self._toggle_fullscreen() if self._is_fullscreen else None)
         
         QShortcut(QKeySequence(Qt.Key.Key_MediaPlay), self, activated=self.play_or_resume)
         QShortcut(QKeySequence(Qt.Key.Key_MediaPause), self, activated=self.play_or_resume)
         QShortcut(QKeySequence(Qt.Key.Key_MediaTogglePlayPause), self, activated=self.play_or_resume)
         QShortcut(QKeySequence(Qt.Key.Key_MediaNext), self, activated=self.next_track)
         QShortcut(QKeySequence(Qt.Key.Key_MediaPrevious), self, activated=self.previous_track)
+
+    def _cycle_aspect(self):
+        """A key: Fit (black bars) -> Fill (crop to fill, no bars) -> Stretch."""
+        if not self.player:
+            return
+        self._aspect_mode = (getattr(self, "_aspect_mode", 0) + 1) % 3
+        try:
+            if self._aspect_mode == 0:
+                self.player.panscan = 0.0
+                self.player.keepaspect = True
+                name = "Fit"
+            elif self._aspect_mode == 1:
+                self.player.keepaspect = True
+                self.player.panscan = 1.0
+                name = "Fill (cropped)"
+            else:
+                self.player.panscan = 0.0
+                self.player.keepaspect = False
+                name = "Stretch"
+            self.status_label.setText(f"Video size: {name}   (press A to change)")
+        except Exception:
+            pass
+
+    def _set_fs_title(self, name):
+        self._fs_title_full = name
+        self._fs_title_key = None
+        self._layout_fs_title()
+
+    def _drawer_width(self):
+        if self.right_panel.parent() is self and self.right_panel.isVisible():
+            return int(min(560, max(400, self.width() * 0.28)))
+        return 0
+
+    def _layout_fs_title(self):
+        """Fullscreen title pill: as wide as its text, elided in the middle, centred over the video."""
+        name = getattr(self, "_fs_title_full", "")
+        area_w = max(300, self.width() - self._drawer_width())
+        key = (name, area_w, self.width())
+        if key == getattr(self, "_fs_title_key", None):
+            return
+        self._fs_title_key = key
+        f = self.fullscreen_title_label.font()
+        f.setPixelSize(18)
+        fm = QFontMetrics(f)
+        pad = 52
+        avail = area_w - 140
+        text = fm.elidedText(name, Qt.TextElideMode.ElideMiddle, max(120, avail - pad))
+        w = int(min(avail, fm.horizontalAdvance(text) + pad))
+        self.fullscreen_title_label.setText(text)
+        origin = self.mapToGlobal(QPoint(0, 0))
+        self.fullscreen_title_label.setGeometry(origin.x() + int((area_w - w) / 2), origin.y() + 28, w, 44)
 
     def _toggle_mute(self):
         if self.player:
@@ -379,12 +607,7 @@ class MediaWindow(QMainWindow):
                 self._toggle_fullscreen()
                 return True
             elif event.type() == QEvent.Type.MouseMove and self._is_fullscreen:
-                self._show_cursor()
-                self.splitter.setSizes([int(self.width() * 0.75), int(self.width() * 0.25)])
-                self.control_panel_widget.show()
-                self.fullscreen_close_button.show()
-                self.fullscreen_title_label.show()
-                self.hide_timer.start()
+                self._on_fs_activity()
             elif event.type() == QEvent.Type.Wheel:
                 delta = event.angleDelta().y()
                 if delta > 0:
@@ -404,10 +627,13 @@ class MediaWindow(QMainWindow):
         self.main_layout.addWidget(self.splitter)
 
         self.left_panel = QWidget()
+        self.left_panel.setObjectName("leftPanel")
         self.left_layout = QVBoxLayout(self.left_panel)
-        self.left_layout.setContentsMargins(5, 5, 5, 5)
+        self.left_layout.setContentsMargins(0, 0, 0, 0)   # video runs edge to edge
+        self.left_layout.setSpacing(0)
 
         self.video = QWidget()
+        self.video.setObjectName("videoSurface")
         self.video.setMinimumSize(480, 270)
         self.video.setStyleSheet("background-color: black; border: none;")
         self.video.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -420,8 +646,10 @@ class MediaWindow(QMainWindow):
         self.audio_art_label.hide()
 
         self.control_panel_widget = QWidget()
+        self.control_panel_widget.setObjectName("controlBar")
         self.control_panel_layout = QVBoxLayout(self.control_panel_widget)
-        self.control_panel_layout.setContentsMargins(0, 0, 0, 0)
+        self.control_panel_layout.setContentsMargins(12, 8, 12, 10)
+        self.control_panel_layout.setSpacing(6)
 
         self.progress_slider = QSlider(Qt.Orientation.Horizontal)
         self.progress_slider.setRange(0, 0)
@@ -431,28 +659,71 @@ class MediaWindow(QMainWindow):
         self.control_panel_layout.addWidget(self.progress_slider)
 
         self.status_label = QLabel("Drag & Drop folders/videos here or choose an action.")
-        self.status_label.setStyleSheet("font-size: 15px; font-weight: bold; margin-left: 5px;")
-        self.control_panel_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #cfd8dc;")
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # long names never widen the window
+        self.time_label = QLabel("00:00 / 00:00")
+        self.time_label.setStyleSheet("font-size: 12px; color: #9aa4a8;")
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.addWidget(self.status_label, stretch=1)
+        status_row.addWidget(self.time_label)
+        self.control_panel_layout.addLayout(status_row)
 
         self.controls_widget = QWidget()
         controls_layout = QHBoxLayout(self.controls_widget)
         controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(8)
 
-        control_btn_style = "font-size: 16px; padding: 8px 16px; font-weight: bold;"
+        control_btn_style = "font-size: 15px; padding: 9px 16px; font-weight: 600;"
+        ICON_SZ = QSize(18, 18)
 
-        self.previous_button = QPushButton("<< Prev")
+        # left cluster: volume
+        volume_box = QWidget()
+        volume_box.setFixedWidth(200)
+        volume_row = QHBoxLayout(volume_box)
+        volume_row.setContentsMargins(0, 0, 0, 0)
+        volume_row.setSpacing(8)
+        self.volume_label = QLabel()
+        self.volume_label.setPixmap(make_icon("volume", "#9aa4a8", 18).pixmap(18, 18))
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(100)
+        self.volume_slider.valueChanged.connect(self.change_volume)
+        self.volume_value_label = QLabel("100%")
+        self.volume_value_label.setFixedWidth(40)
+        self.volume_value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.volume_value_label.setStyleSheet("color: #9aa4a8; font-size: 12px;")
+        volume_row.addWidget(self.volume_label)
+        volume_row.addWidget(self.volume_slider, stretch=1)
+        volume_row.addWidget(self.volume_value_label)
+        controls_layout.addWidget(volume_box)
+        controls_layout.addStretch(1)
+
+        # centre cluster: transport
+        self.previous_button = QPushButton("Prev")
+        self.previous_button.setIcon(make_icon("prev", "#e6e6e6", 18))
+        self.previous_button.setIconSize(ICON_SZ)
         self.previous_button.setStyleSheet(control_btn_style)
         self.previous_button.clicked.connect(self.previous_track)
+        self.previous_button.setFixedWidth(112)
         controls_layout.addWidget(self.previous_button)
 
         self.play_button = QPushButton("Play")
+        self.play_button.setObjectName("playButton")
+        self.play_button.setIconSize(ICON_SZ)
         self.play_button.setStyleSheet(control_btn_style)
         self.play_button.clicked.connect(self.play_or_resume)
+        self.play_button.setFixedWidth(150)
         controls_layout.addWidget(self.play_button)
+        self._set_play_ui(False)
 
-        self.next_button = QPushButton("Next >>")
+        self.next_button = QPushButton("Next")
+        self.next_button.setIcon(make_icon("next", "#e6e6e6", 18))
+        self.next_button.setIconSize(ICON_SZ)
+        self.next_button.setLayoutDirection(Qt.LayoutDirection.RightToLeft)   # icon after the text
         self.next_button.setStyleSheet(control_btn_style)
         self.next_button.clicked.connect(self.next_track)
+        self.next_button.setFixedWidth(112)
         controls_layout.addWidget(self.next_button)
 
         self.speed_combo = QComboBox()
@@ -460,86 +731,155 @@ class MediaWindow(QMainWindow):
         self.speed_combo.setCurrentText("1.0x")
         self.speed_combo.currentTextChanged.connect(self.change_speed)
         self.speed_combo.setStyleSheet("font-size: 14px; padding: 4px;")
+        self.speed_combo.setFixedWidth(84)
         controls_layout.addWidget(self.speed_combo)
+        controls_layout.addStretch(1)
+
+        # right cluster: playlist drawer (fullscreen only) + fullscreen toggle
+        right_box = QWidget()
+        right_box.setFixedWidth(200)
+        right_row = QHBoxLayout(right_box)
+        right_row.setContentsMargins(0, 0, 0, 0)
+        right_row.setSpacing(8)
+        right_row.addStretch(1)
+        self.playlist_toggle_button = QPushButton()
+        self.playlist_toggle_button.setIcon(make_icon("playlist", "#e6e6e6", 18))
+        self.playlist_toggle_button.setIconSize(ICON_SZ)
+        self.playlist_toggle_button.setFixedSize(42, 38)
+        self.playlist_toggle_button.setToolTip("Show / hide playlist  (P)")
+        self.playlist_toggle_button.clicked.connect(self._toggle_fs_playlist)
+        self.playlist_toggle_button.hide()
+        right_row.addWidget(self.playlist_toggle_button)
+        self.fullscreen_button = QPushButton()
+        self.fullscreen_button.setIconSize(ICON_SZ)
+        self.fullscreen_button.setFixedSize(42, 38)
+        self.fullscreen_button.clicked.connect(self._toggle_fullscreen)
+        right_row.addWidget(self.fullscreen_button)
+        self.fs_close_button = QPushButton()
+        self.fs_close_button.setObjectName("closeButton")
+        self.fs_close_button.setIcon(make_icon("close", "#e6e6e6", 18))
+        self.fs_close_button.setIconSize(ICON_SZ)
+        self.fs_close_button.setFixedSize(42, 38)
+        self.fs_close_button.setToolTip("Close ALMP")
+        self.fs_close_button.clicked.connect(self.close)
+        self.fs_close_button.hide()
+        right_row.addWidget(self.fs_close_button)
+        controls_layout.addWidget(right_box)
+        self._update_fs_button()
 
         self.control_panel_layout.addWidget(self.controls_widget)
         self.left_layout.addWidget(self.control_panel_widget)
 
         self.right_panel = QWidget()
+        self.right_panel.setObjectName("rightPanel")
         self.right_layout = QVBoxLayout(self.right_panel)
-        self.right_layout.setContentsMargins(5, 5, 5, 5)
+        self.right_layout.setContentsMargins(10, 10, 10, 10)
+        self.right_layout.setSpacing(8)
 
-        self.playlist_count_label = QLabel("Playlist: 0 items")
+        self.playlist_count_label = QLabel("0 items")
         self.playlist_count_label.setStyleSheet(
-            "background-color: #4A4A4A; color: #FFFFFF; border-radius: 12px; padding: 4px 12px; font-size: 13px; font-weight: bold;"
+            "background-color: #1f2a2d; color: #19c8e6; border-radius: 13px; padding: 5px 14px; font-size: 14px; font-weight: 700;"
         )
-        self.playlist_count_label.setFixedWidth(130)
+        self.playlist_count_label.setMinimumWidth(96)
         self.playlist_count_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        count_layout = QHBoxLayout()
-        count_layout.addWidget(self.playlist_count_label)
-        count_layout.addStretch()
-        self.right_layout.addLayout(count_layout)
+
+        playlist_title = QLabel("Playlist")
+        playlist_title.setStyleSheet("font-size: 17px; font-weight: 600; color: #f1f4f5;")
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(2, 0, 0, 0)
+        header_row.addWidget(playlist_title)
+        header_row.addStretch(1)
+        header_row.addWidget(self.playlist_count_label)
+        self.right_layout.addLayout(header_row)
+
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("Search playlist...   (Ctrl+F)")
+        self.search_edit.setClearButtonEnabled(True)
+        self.search_edit.addAction(make_icon("search", "#8a9499", 16), QLineEdit.ActionPosition.LeadingPosition)
+        self.search_edit.textChanged.connect(self._schedule_filter)
+        self.search_edit.returnPressed.connect(self._play_first_visible)
+        self.right_layout.addWidget(self.search_edit)
+        self._filter_q = ""
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(180)
+        self._filter_timer.timeout.connect(self._apply_filter)
 
         self.playlist = QListWidget()
         self.playlist.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.playlist.itemDoubleClicked.connect(self.play_selected_item)
-        self.playlist.setStyleSheet("QListWidget { font-size: 14px; } QListWidget::item { padding: 6px; }")
+        self.playlist.setStyleSheet("QListWidget { font-size: 13px; } QListWidget::item { padding: 7px 8px; }")
+        self.playlist.setUniformItemSizes(True)                       # big speed-up for huge lists
+        self.playlist.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.playlist.setTextElideMode(Qt.TextElideMode.ElideMiddle)  # long names keep their ending (e.g. .mp4)
+        self.playlist.setWordWrap(False)
         self.right_layout.addWidget(self.playlist, stretch=1)
 
         self.options_widget_1 = QWidget()
         self.options_layout_1 = QHBoxLayout(self.options_widget_1)
         self.options_layout_1.setContentsMargins(0, 0, 0, 0)
+        self.options_layout_1.setSpacing(6)
 
         self.open_folder_button = QPushButton("Open Folder")
         self.open_folder_button.clicked.connect(self.choose_folder)
         self.options_layout_1.addWidget(self.open_folder_button)
 
-        self.clear_playlist_button = QPushButton("Clear Playlist")
+        self.clear_playlist_button = QPushButton("Clear")
+        self.clear_playlist_button.setToolTip("Clear the whole playlist (files are kept)")
         self.clear_playlist_button.clicked.connect(self.clear_playlist)
         self.options_layout_1.addWidget(self.clear_playlist_button)
 
-        self.delete_file_button = QPushButton("Delete File")
+        self.remove_from_list_button = QPushButton("Remove")
+        self.remove_from_list_button.setToolTip("Remove the selected item from the list (file is kept)")
+        self.remove_from_list_button.setStyleSheet("color: #ffb86b;")
+        self.remove_from_list_button.clicked.connect(self.remove_from_playlist)
+        self.options_layout_1.addWidget(self.remove_from_list_button)
+
+        self.delete_file_button = QPushButton("Delete")
+        self.delete_file_button.setToolTip("Permanently delete the selected file from your computer")
         self.delete_file_button.setStyleSheet("color: #ff6b6b; font-weight: bold;")
         self.delete_file_button.clicked.connect(self.delete_selected_file)
         self.options_layout_1.addWidget(self.delete_file_button)
 
-        self.shuffle_checkbox = QCheckBox("Shuffle")
-        self.shuffle_checkbox.setChecked(True)
-        self.shuffle_checkbox.toggled.connect(self.set_shuffle)
-        self.options_layout_1.addWidget(self.shuffle_checkbox)
-        
-        self.loop_single_checkbox = QCheckBox("Loop 1")
-        self.options_layout_1.addWidget(self.loop_single_checkbox)
-
         self.right_layout.addWidget(self.options_widget_1)
 
         self.options_widget_2 = QWidget()
-        self.options_layout_2 = QHBoxLayout(self.options_widget_2)
-        self.options_layout_2.setContentsMargins(0, 0, 0, 0)
+        self.options_layout_2 = QGridLayout(self.options_widget_2)
+        self.options_layout_2.setContentsMargins(2, 2, 2, 0)
+        self.options_layout_2.setHorizontalSpacing(12)
+        self.options_layout_2.setVerticalSpacing(8)
 
-        self.remove_from_list_button = QPushButton("Remove from List")
-        self.remove_from_list_button.setStyleSheet("font-weight: bold; color: #ff6b6b;")
-        self.remove_from_list_button.clicked.connect(self.remove_from_playlist)
-        self.options_layout_2.addWidget(self.remove_from_list_button)
+        self.shuffle_checkbox = QCheckBox("Shuffle")
+        self.shuffle_checkbox.setChecked(True)
+        self.shuffle_checkbox.toggled.connect(self.set_shuffle)
+        self.options_layout_2.addWidget(self.shuffle_checkbox, 0, 0)
+
+        self.loop_single_checkbox = QCheckBox("Loop 1")
+        self.options_layout_2.addWidget(self.loop_single_checkbox, 0, 1)
 
         self.remove_played_checkbox = QCheckBox("Remove played")
         self.remove_played_checkbox.setChecked(True)
-        self.options_layout_2.addWidget(self.remove_played_checkbox)
+        self.options_layout_2.addWidget(self.remove_played_checkbox, 1, 0)
 
         self.startup_checkbox = QCheckBox("Run at Startup")
         self.startup_checkbox.toggled.connect(self.toggle_startup)
-        self.options_layout_2.addWidget(self.startup_checkbox)
+        self.options_layout_2.addWidget(self.startup_checkbox, 1, 1)
 
-        self.volume_label = QLabel("Vol:")
-        self.options_layout_2.addWidget(self.volume_label)
-
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
-        self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(100)
-        self.volume_slider.setFixedWidth(80)
-        self.volume_slider.valueChanged.connect(self.change_volume)
-        self.options_layout_2.addWidget(self.volume_slider)
+        size_label = QLabel("Interface size")
+        size_label.setStyleSheet("color: #9aa4a8; font-size: 12px;")
+        self.scale_combo = QComboBox()
+        for label, _val in SCALE_CHOICES:
+            self.scale_combo.addItem(label)
+        _saved_scale = float(load_settings().get("ui_scale", 1.0))
+        for i, (_label, val) in enumerate(SCALE_CHOICES):
+            if abs(val - _saved_scale) < 0.01:
+                self.scale_combo.setCurrentIndex(i)
+        self.scale_combo.currentIndexChanged.connect(self._on_scale_changed)
+        size_row = QHBoxLayout()
+        size_row.setContentsMargins(0, 0, 0, 0)
+        size_row.addWidget(size_label)
+        size_row.addWidget(self.scale_combo, stretch=1)
+        self.options_layout_2.addLayout(size_row, 2, 0, 1, 2)
 
         self.right_layout.addWidget(self.options_widget_2)
 
@@ -552,21 +892,7 @@ class MediaWindow(QMainWindow):
         self.setMouseTracking(True)
         self.video.setMouseTracking(True)
 
-        self.fullscreen_close_button = QPushButton("X", self)
-        self.fullscreen_close_button.setToolTip("Exit Fullscreen")
-        self.fullscreen_close_button.setStyleSheet(
-            "background-color: rgba(40, 40, 40, 180); color: white; border: none; font-size: 16px; font-weight: bold; border-radius: 15px;"
-        )
-        self.fullscreen_close_button.setFixedSize(30, 30)
-        self.fullscreen_close_button.hide()
-        self.fullscreen_close_button.clicked.connect(self._toggle_fullscreen)
-        self.fullscreen_close_button.raise_()
-
-        self.fullscreen_title_label = QLabel("", self)
-        self.fullscreen_title_label.setStyleSheet(
-            "background-color: rgba(0, 0, 0, 140); color: white; font-size: 20px; padding: 8px 20px; border-radius: 8px;"
-        )
-        self.fullscreen_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fullscreen_title_label = FullscreenTitlePill(self)
         self.fullscreen_title_label.hide()
         self.fullscreen_title_label.raise_()
 
@@ -577,7 +903,7 @@ class MediaWindow(QMainWindow):
             self.player_events = PlayerEventBridge(self)
             self.player_events.end_file.connect(self._handle_end_file)
 
-            self.player = mpv.MPV(
+            mpv_opts = dict(
                 wid=str(int(self.video.winId())),
                 osc=False,
                 input_default_bindings=False,
@@ -587,7 +913,26 @@ class MediaWindow(QMainWindow):
                 hwdec="auto",
                 cursor_autohide="no",
             )
-            self.player.volume = 100
+            if sys.platform.startswith("linux"):
+                # WSL has no real GPU for OpenGL (Mesa/ZINK errors). If mpv tries the
+                # default GPU video output and it fails, its fallback aborts the whole
+                # app ("vo_x11_init: Assertion !vo->x11 failed"). Use the plain
+                # software X11 output there. Override with: ALMP_VO=gpu ./ALMP
+                forced_vo = os.environ.get("ALMP_VO")
+                if forced_vo:
+                    mpv_opts["vo"] = forced_vo
+                else:
+                    try:
+                        in_wsl = "microsoft" in open("/proc/version").read().lower()
+                    except Exception:
+                        in_wsl = False
+                    if in_wsl:
+                        mpv_opts["vo"] = "x11"
+                        mpv_opts["hwdec"] = "no"
+                        mpv_opts["profile"] = "fast"        # cheaper scaling
+                        mpv_opts["vd_lavc_fast"] = True     # faster (slightly lower quality) decoding
+            self.player = mpv.MPV(**mpv_opts)
+            self.player.volume = self.volume_slider.value()
 
             @self.player.event_callback("end-file")
             def handle_end_file(event):
@@ -598,16 +943,76 @@ class MediaWindow(QMainWindow):
         except Exception as e:
             self.status_label.setText(f"Media Player Initialization Error: {e}")
 
-    def _update_playlist_count(self):
-        count = len(self.files)
-        self.playlist_count_label.setText(f"Playlist: {count} items")
+    def _update_playlist_count(self, visible=None):
+        total = len(self.files)
+        if not getattr(self, "_filter_q", ""):
+            self.playlist_count_label.setText(f"{total:,} item" + ("" if total == 1 else "s"))
+            return
+        if visible is None:
+            visible = sum(1 for i in range(self.playlist.count()) if not self.playlist.item(i).isHidden())
+        self.playlist_count_label.setText(f"{visible:,} of {total:,}")
+
+    def _schedule_filter(self, _text=None):
+        self._filter_timer.start()
+
+    def _apply_filter(self):
+        q = self.search_edit.text().strip().casefold()
+        self._filter_q = q
+        visible = 0
+        self.playlist.setUpdatesEnabled(False)
+        for i in range(self.playlist.count()):
+            item = self.playlist.item(i)
+            hide = bool(q) and q not in item.text().casefold()
+            item.setHidden(hide)
+            if not hide:
+                visible += 1
+        self.playlist.setUpdatesEnabled(True)
+        self._update_playlist_count(visible)
+
+    def _play_first_visible(self):
+        for i in range(self.playlist.count()):
+            item = self.playlist.item(i)
+            if not item.isHidden():
+                self.play_selected_item(item)
+                self.video.setFocus()
+                return
+
+    def _focus_search(self):
+        if self._is_fullscreen:
+            return
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
+    def _on_scale_changed(self, index):
+        if 0 <= index < len(SCALE_CHOICES):
+            data = load_settings()
+            data["ui_scale"] = SCALE_CHOICES[index][1]
+            save_settings(data)
+            self.status_label.setText("Interface size saved - close and reopen ALMP to apply it.")
+
+    def _save_settings(self):
+        data = load_settings()
+        data.update({
+            "volume": self.volume_slider.value(),
+            "shuffle": self.shuffle_checkbox.isChecked(),
+            "loop_single": self.loop_single_checkbox.isChecked(),
+            "remove_played": self.remove_played_checkbox.isChecked(),
+        })
+        save_settings(data)
+
+    def _apply_settings(self):
+        data = load_settings()
+        try:
+            self.volume_slider.setValue(int(data.get("volume", 100)))
+            self.shuffle_checkbox.setChecked(bool(data.get("shuffle", True)))
+            self.loop_single_checkbox.setChecked(bool(data.get("loop_single", False)))
+            self.remove_played_checkbox.setChecked(bool(data.get("remove_played", True)))
+        except Exception:
+            pass
 
     def resizeEvent(self, event):
-        self.fullscreen_close_button.move(self.width() - 45, 15)
-        title_width = 600
-        self.fullscreen_title_label.setGeometry(
-            int((self.width() - title_width) / 2), 15, title_width, 45
-        )
+        QTimer.singleShot(0, self._layout_fs_title)
+        QTimer.singleShot(0, self._layout_overlay)
         self.audio_art_label.resize(self.video.width(), self.video.height())
         super().resizeEvent(event)
 
@@ -667,10 +1072,19 @@ class MediaWindow(QMainWindow):
         WIN_STARTUP_DIR.mkdir(parents=True, exist_ok=True)
         subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
                        capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            STARTUP_MARKER.parent.mkdir(parents=True, exist_ok=True)
+            STARTUP_MARKER.write_text(os.path.normcase(exe_path), encoding="utf-8")
+        except Exception:
+            pass
 
     def _repair_startup_shortcut(self):
         """Runs in background: fix the Startup shortcut if it points elsewhere."""
         try:
+            # Fast path: we wrote the shortcut for this exact exe before -> no PowerShell needed
+            if STARTUP_MARKER.exists() and \
+               STARTUP_MARKER.read_text(encoding="utf-8").strip() == os.path.normcase(APP_EXE_PATH):
+                return
             def q(v): return "'" + str(v).replace("'", "''") + "'"
             ps = "(New-Object -ComObject WScript.Shell).CreateShortcut(%s).TargetPath" % q(WIN_SHORTCUT)
             r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
@@ -731,7 +1145,7 @@ class MediaWindow(QMainWindow):
                         f.write("[Desktop Entry]\n")
                         f.write("Type=Application\n")
                         f.write(f"Name={APP_NAME}\n")
-                        f.write(f"Exec={exe_path}\n")
+                        f.write(f'Exec="{exe_path}"\n')
                         f.write("Terminal=false\n")
                     self.status_label.setText("App set to run at Linux startup.")
                 else:
@@ -744,6 +1158,7 @@ class MediaWindow(QMainWindow):
 
     def _load_album_art(self, file_path):
         try:
+            from mutagen import File as MutagenFile   # loaded on first use, keeps launch fast
             audio = MutagenFile(file_path)
             if audio is None:
                 return None
@@ -765,6 +1180,7 @@ class MediaWindow(QMainWindow):
         return None
 
     def change_volume(self):
+        self.volume_value_label.setText(f"{self.volume_slider.value()}%")
         if self.player:
             self.player.volume = self.volume_slider.value()
 
@@ -774,6 +1190,7 @@ class MediaWindow(QMainWindow):
             self.player.speed = speed
 
     def clear_playlist(self):
+        self._pending_paths = []
         self.track_timer.stop()
         self.files.clear()
         self.current_index = -1
@@ -781,7 +1198,7 @@ class MediaWindow(QMainWindow):
         self.playlist.clear()
         self.progress_slider.setValue(0)
         self.progress_slider.setMaximum(0)
-        self.play_button.setText("Play")
+        self._set_play_ui(False)
         self.audio_art_label.hide()
         self.status_label.setText("Playlist cleared cleanly. Drag & Drop files to start again.")
         self._update_playlist_count()
@@ -818,7 +1235,7 @@ class MediaWindow(QMainWindow):
             self.current_index = -1
             self.current_path = None
             self.audio_art_label.hide()
-            self.play_button.setText("Play")
+            self._set_play_ui(False)
             self.progress_slider.setValue(0)
             self.progress_slider.setMaximum(1)
             self.track_timer.stop()
@@ -829,6 +1246,21 @@ class MediaWindow(QMainWindow):
         else:
             if idx < self.current_index:
                 self.current_index -= 1
+
+    def _set_mpv_pause(self, value):
+        """Pause/resume without ever blocking the window if mpv's video thread is busy."""
+        if not self.player:
+            return
+        try:
+            if sys.platform != "win32":
+                self.player.command_async("set", "pause", "yes" if value else "no")
+            else:
+                self.player.pause = value
+        except Exception:
+            try:
+                self.player.pause = value
+            except Exception:
+                pass
 
     def delete_selected_file(self):
         item = self.playlist.currentItem()
@@ -849,7 +1281,7 @@ class MediaWindow(QMainWindow):
             try:
                 was_playing = not bool(self.player.pause)
                 if was_playing:
-                    self.player.pause = True
+                    self._set_mpv_pause(True)
             except Exception:
                 pass
 
@@ -859,6 +1291,7 @@ class MediaWindow(QMainWindow):
 
         if was_fullscreen:
             self._is_fullscreen = False
+            self._exit_fullscreen_ui()
             self.showMaximized()
             self.activateWindow()
             self.raise_()
@@ -866,7 +1299,6 @@ class MediaWindow(QMainWindow):
             self.left_panel.show()
             self.right_panel.show()
             self.control_panel_widget.show()
-            self.fullscreen_close_button.hide()
             self.fullscreen_title_label.hide()
 
             QApplication.processEvents()
@@ -887,13 +1319,13 @@ class MediaWindow(QMainWindow):
         if was_fullscreen:
             self.showFullScreen()
             self._is_fullscreen = True
+            self._enter_fullscreen_ui()
             QApplication.processEvents()
 
+            self._fs_drawer_wanted = False
             self.left_panel.show()
-            self.right_panel.show()
-            self.splitter.setSizes([self.splitter.width(), 0])
+            self.right_panel.hide()
             self.control_panel_widget.hide()
-            self.fullscreen_close_button.hide()
             self.fullscreen_title_label.hide()
 
             self._show_cursor()
@@ -905,8 +1337,8 @@ class MediaWindow(QMainWindow):
         if reply != QDialog.DialogCode.Accepted:
             if was_playing and self.player:
                 try:
-                    self.player.pause = False
-                    self.play_button.setText("Pause")
+                    self._set_mpv_pause(False)
+                    self._set_play_ui(True)
                 except Exception:
                     pass
             return
@@ -932,7 +1364,7 @@ class MediaWindow(QMainWindow):
             self._dialog_active = False
             if was_playing and not is_currently_playing and self.player:
                 self.player.pause = False
-                self.play_button.setText("Pause")
+                self._set_play_ui(True)
             return
 
         self.files.pop(idx)
@@ -944,7 +1376,7 @@ class MediaWindow(QMainWindow):
             self.current_index = -1
             self.current_path = None
             self.audio_art_label.hide()
-            self.play_button.setText("Play")
+            self._set_play_ui(False)
             self.progress_slider.setValue(0)
             self.progress_slider.setMaximum(1)
             self.track_timer.stop()
@@ -965,7 +1397,7 @@ class MediaWindow(QMainWindow):
             if was_playing and self.player:
                 try:
                     self.player.pause = False
-                    self.play_button.setText("Pause")
+                    self._set_play_ui(True)
                 except Exception:
                     pass
 
@@ -975,13 +1407,25 @@ class MediaWindow(QMainWindow):
         try:
             if self._is_scrubbing:
                 return
+            if self.isMinimized():
+                return
             current_time = getattr(self.player, "time_pos", 0) or 0
             duration = getattr(self.player, "duration", 0) or 1
-            if duration > 0:
+            key = (int(current_time), int(duration))
+            if duration > 0 and key != getattr(self, "_last_tick_key", None):   # repaint only when the second changes
+                self._last_tick_key = key
                 self.progress_slider.setMaximum(int(duration))
                 self.progress_slider.setValue(int(current_time))
+                self.time_label.setText(f"{self._fmt_time(current_time)} / {self._fmt_time(duration)}")
         except Exception:
             pass
+
+    @staticmethod
+    def _fmt_time(seconds):
+        seconds = int(max(0, seconds))
+        h, rem = divmod(seconds, 3600)
+        m, sec = divmod(rem, 60)
+        return f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
 
     def slider_user_scrubbed(self):
         if self.player:
@@ -996,53 +1440,144 @@ class MediaWindow(QMainWindow):
 
     def mouseMoveEvent(self, event):
         if self._is_fullscreen:
-            self._show_cursor()
-            self.splitter.setSizes([int(self.width() * 0.75), int(self.width() * 0.25)])
-            self.control_panel_widget.show()
-            self.fullscreen_close_button.show()
-            self.fullscreen_title_label.show()
-            self.hide_timer.start()
+            self._on_fs_activity()
         super().mouseMoveEvent(event)
 
+    # ----- fullscreen: controls float over the video (the picture never resizes) -----
+    def _enter_fullscreen_ui(self):
+        bar = self.control_panel_widget
+        if bar.parent() is self:
+            return
+        self.left_layout.removeWidget(bar)
+        bar.setParent(self)
+        bar.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)   # sits above mpv's video window
+        bar.hide()
+        self.right_panel.setParent(self)                             # playlist becomes a floating drawer
+        self.right_panel.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.right_panel.hide()
+        self.playlist_toggle_button.show()
+        self.fs_close_button.show()
+        self._update_fs_button()
+
+    def _exit_fullscreen_ui(self):
+        bar = self.control_panel_widget
+        if bar.parent() is not self:
+            return
+        self.left_layout.addWidget(bar)
+        bar.show()
+        self.splitter.addWidget(self.right_panel)
+        self.right_panel.show()
+        self.playlist_toggle_button.hide()
+        self.fs_close_button.hide()
+        self._update_fs_button()
+
+    def _layout_overlay(self):
+        bar = self.control_panel_widget
+        if bar.parent() is not self:
+            return
+        W, H = self.width(), self.height()
+        dw = self._drawer_width()
+        h = bar.sizeHint().height()
+        bar.setGeometry(0, max(0, H - h), max(300, W - dw), h)
+        if dw:
+            self.right_panel.setGeometry(W - dw, 0, dw, H)
+            self.right_panel.raise_()
+        bar.raise_()
+
+    def _show_fs_overlays(self):
+        """Bar and playlist drawer always appear together."""
+        bar = self.control_panel_widget
+        if bar.parent() is not self:
+            return
+        wanted = getattr(self, "_fs_drawer_wanted", False)
+        newly = (not bar.isVisible()) or (wanted != self.right_panel.isVisible())
+        if wanted:
+            self.right_panel.show()
+        else:
+            self.right_panel.hide()
+        bar.show()
+        if newly:
+            self._layout_overlay()
+            QTimer.singleShot(0, self._layout_fs_title)
+
+    def _on_fs_activity(self):
+        self._show_cursor()
+        self._show_fs_overlays()
+        if not self.fullscreen_title_label.isVisible():
+            self.fullscreen_title_label.show()
+            QTimer.singleShot(0, self._layout_fs_title)
+        self.hide_timer.start()
+
     def _hide_fullscreen_overlays(self):
-        if self._is_fullscreen and not self._is_scrubbing:
-            self._hide_cursor()
-            self.splitter.setSizes([self.width(), 0])
+        if not self._is_fullscreen or self._is_scrubbing:
+            return
+        # stay open while the pointer is on the bar OR the drawer
+        pos = QCursor.pos()
+        for w in (self.control_panel_widget, self.right_panel):
+            if w.isVisible() and w.width() > 0 and w.rect().contains(w.mapFromGlobal(pos)):
+                self.hide_timer.start()
+                return
+        self._hide_cursor()
+        if self.control_panel_widget.parent() is self:
             self.control_panel_widget.hide()
-            self.fullscreen_close_button.hide()
-            self.fullscreen_title_label.hide()
-            self.hide_timer.stop()
-            self.video.setFocus()
+            self.right_panel.hide()
+        self.fullscreen_title_label.hide()
+        self.hide_timer.stop()
+        self.video.setFocus()
+
+    def _toggle_fs_playlist(self):
+        if not self._is_fullscreen:
+            return
+        self._fs_drawer_wanted = not getattr(self, "_fs_drawer_wanted", False)
+        self._fs_title_key = None
+        self._on_fs_activity()
+        QTimer.singleShot(0, self._layout_overlay)
+
+    def _update_fs_button(self):
+        if self._is_fullscreen:
+            self.fullscreen_button.setIcon(make_icon("exitfullscreen", "#e6e6e6", 18))
+            self.fullscreen_button.setToolTip("Exit fullscreen  (Esc / F)")
+        else:
+            self.fullscreen_button.setIcon(make_icon("fullscreen", "#e6e6e6", 18))
+            self.fullscreen_button.setToolTip("Fullscreen  (F)")
+
+    def _set_play_ui(self, playing):
+        self.play_button.setText("Pause" if playing else "Play")
+        self.play_button.setIcon(make_icon("pause" if playing else "play", "#04222a", 18))
 
     def _toggle_fullscreen(self):
         if self._is_fullscreen:
             self.showNormal()
             self._is_fullscreen = False
-            
-            screen_geo = self.screen().availableGeometry()
-            self.resize(1200, 700)
-            x = screen_geo.x() + (screen_geo.width() - self.width()) // 2
-            y = screen_geo.y() + (screen_geo.height() - self.height()) // 2
-            self.move(x, y)
-            
+            self._exit_fullscreen_ui()
+            if getattr(self, "_pre_fs_maximized", False):
+                self.showMaximized()
+            elif getattr(self, "_pre_fs_geometry", None) is not None:
+                self.setGeometry(self._pre_fs_geometry)
+            else:
+                screen_geo = self.screen().availableGeometry()
+                self.resize(1200, 700)
+                self.move(screen_geo.x() + (screen_geo.width() - self.width()) // 2,
+                          screen_geo.y() + (screen_geo.height() - self.height()) // 2)
             self._show_cursor()
             self.hide_timer.stop()
-            self.control_panel_widget.show()
-            self.fullscreen_close_button.hide()
             self.fullscreen_title_label.hide()
             self.splitter.setSizes([800, 400])
             self.main_layout.setContentsMargins(0, 0, 0, 0)
         else:
+            self._pre_fs_maximized = self.isMaximized()
+            self._pre_fs_geometry = None if self.isMaximized() else self.geometry()
             self.showFullScreen()
             self._is_fullscreen = True
-            self.splitter.setSizes([self.width(), 0])
-            self.control_panel_widget.hide()
-            self.fullscreen_close_button.hide()
+            self._enter_fullscreen_ui()
+            self._fs_drawer_wanted = False
             if self.current_path:
-                self.fullscreen_title_label.setText(Path(self.current_path).name)
+                self._set_fs_title(Path(self.current_path).name)
             self.fullscreen_title_label.hide()
             self._hide_cursor()
             self.hide_timer.start()
+        self._update_fs_button()
+        QTimer.singleShot(0, self._layout_overlay)
         self.setFocus()
         self.video.setFocus()
 
@@ -1078,24 +1613,44 @@ class MediaWindow(QMainWindow):
     def _on_files_found(self, paths):
         if not paths:
             return
-            
+        was_empty = len(self.files) == 0 and not getattr(self, "_pending_paths", [])
+        self._pending_paths = list(getattr(self, "_pending_paths", [])) + list(paths)
+        self._pending_started_empty = was_empty or getattr(self, "_pending_started_empty", False)
+        if not getattr(self, "_chunk_running", False):
+            self._chunk_running = True
+            QTimer.singleShot(0, self._add_next_chunk)
+
+    def _add_next_chunk(self):
+        """Adds up to 1,500 files per tick; the UI stays responsive even with 50,000+ files."""
+        pending = getattr(self, "_pending_paths", [])
+        if not pending:
+            self._chunk_running = False
+            return
+        chunk, self._pending_paths = pending[:1500], pending[1500:]
         was_empty = len(self.files) == 0
-        
+
         self.playlist.setUpdatesEnabled(False)
-        self.files.extend(paths)
-        
-        for path in paths:
-            item = QListWidgetItem(Path(path).name)
-            item.setToolTip(path)
+        self.files.extend(chunk)
+        q = getattr(self, "_filter_q", "")
+        for path in chunk:
+            name = Path(path).name
+            item = QListWidgetItem(name)
             item.setData(Qt.ItemDataRole.UserRole, path)
             self.playlist.addItem(item)
-
+            if q and q not in name.casefold():
+                item.setHidden(True)
         self.playlist.setUpdatesEnabled(True)
-        self.status_label.setText(f"Added {len(paths)} media file(s). Total: {len(self.files)}.")
         self._update_playlist_count()
-        
+
         if was_empty and self.files:
             self.play_index(0)
+
+        if self._pending_paths:
+            self.status_label.setText(f"Loading... {len(self.files):,} added, {len(self._pending_paths):,} to go")
+            QTimer.singleShot(0, self._add_next_chunk)
+        else:
+            self._chunk_running = False
+            self.status_label.setText(f"Added media. Total: {len(self.files):,} item(s).")
 
     def _on_scan_error(self, message):
         self.status_label.setText("Import operation failed.")
@@ -1132,11 +1687,10 @@ class MediaWindow(QMainWindow):
         self.playlist.setCurrentRow(index)
         
         if self._is_fullscreen:
-            self.fullscreen_title_label.setText(Path(path).name)
+            self._set_fs_title(Path(path).name)
             if not self.hide_timer.isActive():
                 self._hide_cursor()
                 self.control_panel_widget.hide()
-                self.fullscreen_close_button.hide()
             else:
                 self.hide_timer.start()
 
@@ -1164,7 +1718,7 @@ class MediaWindow(QMainWindow):
             self.player.loadfile(path, mode="replace")
             self.player.pause = False
             self.status_label.setText(f"Playing: {Path(path).name}")
-            self.play_button.setText("Pause")
+            self._set_play_ui(True)
             self.track_timer.start()
 
     def play_or_resume(self):
@@ -1175,7 +1729,7 @@ class MediaWindow(QMainWindow):
             self.play_index(self.current_index if self.current_index >= 0 else 0)
         else:
             self.player.pause = not self.player.pause
-            self.play_button.setText("Play" if self.player.pause else "Pause")
+            self._set_play_ui(not self.player.pause)
 
     def previous_track(self):
         if not self.files:
@@ -1250,7 +1804,7 @@ class MediaWindow(QMainWindow):
             self.status_label.setText("Playlist finished.")
             self.current_index = -1
             self.current_path = None
-            self.play_button.setText("Play")
+            self._set_play_ui(False)
             self.progress_slider.setValue(0)
             self.progress_slider.setMaximum(1)
             self.track_timer.stop()
@@ -1270,6 +1824,10 @@ class MediaWindow(QMainWindow):
             self.play_index(idx_to_remove)
 
     def closeEvent(self, event):
+        try:
+            self._save_settings()
+        except Exception:
+            pass
         self._closing = True
         self.track_timer.stop()
         self.hide_timer.stop()
@@ -1285,6 +1843,12 @@ class MediaWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    if sys.platform != "win32":
+        try:
+            import faulthandler
+            faulthandler.enable()   # a crash now prints the Python stack to the terminal
+        except Exception:
+            pass
     temp_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation)
     lock_file = QLockFile(os.path.join(temp_dir, "ALMP.lock"))
     cli_paths = [os.path.abspath(a) for a in sys.argv[1:] if a and not a.startswith("-")]
@@ -1304,82 +1868,115 @@ if __name__ == "__main__":
     # Taskbar Icon Fix (Windows Only)
     if sys.platform == "win32":
         try:
-            myappid = "Alexbed.LightMediaPlayer.ALMP.6.8" 
+            myappid = "Alexbed.LightMediaPlayer.ALMP.7.2" 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass
 
+    try:
+        _scale = float(load_settings().get("ui_scale", 1.0))
+        if 0.75 <= _scale <= 3.0 and abs(_scale - 1.0) > 0.01 and "QT_SCALE_FACTOR" not in os.environ:
+            os.environ["QT_SCALE_FACTOR"] = str(_scale)
+    except Exception:
+        pass
     app = QApplication(sys.argv)
+    if sys.platform != "win32":
+        import locale
+        locale.setlocale(locale.LC_NUMERIC, "C")   # libmpv refuses to start otherwise
+    print(f"[ALMP] Qt platform: {app.platformName()}")
     
     # --- GLOBAL DARK THEME STYLESHEET ---
     dark_stylesheet = """
         QWidget {
-            background-color: #2b2b2b;
-            color: #e0e0e0;
-            font-family: "Segoe UI", "Ubuntu", sans-serif;
+            color: #e6e6e6;
+            font-family: "Segoe UI", "Ubuntu", "Noto Sans", sans-serif;
         }
+        QMainWindow, QDialog, QMessageBox { background-color: #121212; }
+        QLabel, QCheckBox { background: transparent; }
+        #leftPanel { background-color: #000000; }
+        #controlBar { background-color: #161616; border-top: 1px solid #242424; }
+        #rightPanel { background-color: #161616; border-left: 1px solid #242424; }
+        QSplitter::handle { background-color: #242424; width: 2px; }
+        QSplitter::handle:hover { background-color: #19c8e6; }
+
         QPushButton {
-            background-color: #3c3f41;
-            border: 1px solid #555555;
-            border-radius: 4px;
+            background-color: #232323;
+            border: 1px solid #303030;
+            border-radius: 8px;
             padding: 6px 12px;
-            color: #e0e0e0;
+            color: #e6e6e6;
         }
-        QPushButton:hover {
-            background-color: #4c5052;
-        }
-        QPushButton:pressed {
-            background-color: #2b2b2b;
-        }
+        QPushButton:hover { background-color: #2c2c2c; border-color: #19c8e6; }
+        QPushButton:pressed { background-color: #1a1a1a; }
+        QPushButton:disabled { color: #666666; border-color: #262626; }
+        #closeButton:hover { background-color: #c42b1c; border-color: #c42b1c; }
+        #closeButton:pressed { background-color: #a32316; }
+        #playButton { background-color: #19c8e6; color: #04222a; border: 1px solid #19c8e6; }
+        #playButton:hover { background-color: #3ad8f2; }
+        #playButton:pressed { background-color: #12a9c3; }
+
         QListWidget {
-            background-color: #1e1e1e;
-            border: 1px solid #555555;
+            background-color: #101010;
+            border: 1px solid #242424;
+            border-radius: 8px;
             outline: none;
         }
-        QListWidget::item {
-            padding: 5px;
-            border-bottom: 1px solid #333333;
-        }
-        QListWidget::item:selected {
-            background-color: #004d99;
-            color: white;
-        }
-        QSlider::groove:horizontal {
-            border: 1px solid #999999;
-            height: 6px;
-            background: #3c3f41;
-            border-radius: 3px;
-        }
+        QListWidget::item { padding: 6px 8px; border: none; border-radius: 6px; }
+        QListWidget::item:hover { background-color: #1d1d1d; }
+        QListWidget::item:selected { background-color: #123a44; color: #ffffff; }
+
+        QSlider::groove:horizontal { height: 4px; background: #2e2e2e; border-radius: 2px; }
+        QSlider::sub-page:horizontal { background: #19c8e6; border-radius: 2px; }
         QSlider::handle:horizontal {
-            background: #0078d7;
-            border: 1px solid #5c5c5c;
-            width: 14px;
-            margin: -5px 0;
-            border-radius: 7px;
+            background: #ffffff; border: none;
+            width: 12px; height: 12px; margin: -4px 0; border-radius: 6px;
         }
+        QSlider::handle:horizontal:hover { background: #19c8e6; }
+
+        QCheckBox { spacing: 6px; }
         QCheckBox::indicator {
-            width: 15px;
-            height: 15px;
+            width: 15px; height: 15px;
+            border: 1px solid #4a4a4a; border-radius: 4px; background: #1c1c1c;
         }
+        QCheckBox::indicator:hover { border-color: #19c8e6; }
+        QCheckBox::indicator:checked { background: #19c8e6; border-color: #19c8e6; }
+
         QComboBox {
-            background-color: #3c3f41;
-            border: 1px solid #555555;
-            border-radius: 4px;
-            padding: 4px;
+            background-color: #232323;
+            border: 1px solid #303030;
+            border-radius: 8px;
+            padding: 4px 8px;
         }
-        QMessageBox {
-            background-color: #2b2b2b;
+        QComboBox:hover { border-color: #19c8e6; }
+        QComboBox QAbstractItemView {
+            background-color: #1c1c1c; border: 1px solid #303030;
+            selection-background-color: #123a44; outline: none;
         }
+
+        QScrollBar:vertical { background: transparent; width: 10px; margin: 0; }
+        QScrollBar::handle:vertical { background: #3a3a3a; border-radius: 5px; min-height: 30px; }
+        QScrollBar::handle:vertical:hover { background: #19c8e6; }
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+
+        QLineEdit {
+            background-color: #101010; border: 1px solid #262626; border-radius: 9px;
+            padding: 7px 10px; selection-background-color: #123a44;
+        }
+        QLineEdit:focus { border-color: #19c8e6; }
+        QToolTip { background-color: #1c1c1c; color: #e6e6e6; border: 1px solid #19c8e6; padding: 4px; }
     """
     app.setStyleSheet(dark_stylesheet)
 
-    icon_path = get_resource_path("icon.ico")
-    if os.path.exists(icon_path):
+    icon_path = get_app_icon_path()
+    if icon_path:
         app.setWindowIcon(QIcon(icon_path))
 
     window = MediaWindow()
-    if os.path.exists(icon_path):
+    if icon_path:
         window.setWindowIcon(QIcon(icon_path))
+    if sys.platform != "win32":
+        app.setDesktopFileName("ALMP")   # lets Linux match the window to ALMP.desktop (taskbar icon)
 
     window.show()
     window.start_ipc_server()
