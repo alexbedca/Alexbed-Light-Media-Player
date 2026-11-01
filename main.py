@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__version__ = "7.2.0"
+__version__ = "7.5.1"
 
 import os
 import sys
@@ -32,9 +32,6 @@ if sys.platform == "win32":
     import winreg
 
 # --- Linux: embed mpv through X11 ---
-# mpv draws into the Qt video widget by window id ("wid"). That only works when Qt
-# runs on X11 (xcb). On Wayland sessions (WSLg, Ubuntu default) Qt would use native
-# Wayland, mpv cannot embed and opens its own extra window (double title bars).
 if sys.platform.startswith("linux") and "QT_QPA_PLATFORM" not in os.environ and os.environ.get("DISPLAY"):
     os.environ["QT_QPA_PLATFORM"] = "xcb"
 
@@ -49,7 +46,6 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def get_app_icon_path():
-    """Windows uses icon.ico; Linux prefers icon.png (always loads), then icon.ico."""
     names = ["icon.ico"] if sys.platform == "win32" else ["icon.png", "icon.ico"]
     for n in names:
         p = get_resource_path(n)
@@ -59,10 +55,6 @@ def get_app_icon_path():
 
 # --- Real location of ALMP.exe (portable-safe) ---
 def _resolve_app_exe_path():
-    """Full, real path of the running ALMP.exe.
-    NOTE: in Nuitka builds sys.executable is a FAKE '...\\python.exe' that does not
-    exist, so it must never be used. We ask Windows which exe file the process
-    was really started from instead."""
     def _ok(path):
         return bool(path) and os.path.isfile(path) and os.path.basename(path).lower() not in ("python.exe", "pythonw.exe")
 
@@ -70,17 +62,16 @@ def _resolve_app_exe_path():
     try:
         if sys.platform == "win32":
             buf = ctypes.create_unicode_buffer(32768)
-            ctypes.windll.kernel32.GetModuleFileNameW(None, buf, 32768)   # the real running exe
+            ctypes.windll.kernel32.GetModuleFileNameW(None, buf, 32768)
             candidates.append(buf.value)
         else:
             candidates.append(os.path.realpath("/proc/self/exe"))
     except Exception:
         pass
-    # Nuitka onefile: the real exe the user launched (the process itself runs from a temp folder)
     candidates.append(os.environ.get("NUITKA_ONEFILE_BINARY", ""))
     candidates.append(sys.argv[0] if sys.argv else "")
     try:
-        candidates.append(os.path.join(__compiled__.containing_dir, "ALMP.exe"))  # Nuitka only
+        candidates.append(os.path.join(__compiled__.containing_dir, "ALMP.exe"))
     except Exception:
         pass
     candidates.append(sys.executable)
@@ -89,16 +80,16 @@ def _resolve_app_exe_path():
         try:
             c = os.path.abspath(c) if c else c
             if _ok(c):
-                if sys.platform == "win32":      # expand 8.3 short names
+                if sys.platform == "win32":
                     out = ctypes.create_unicode_buffer(32768)
                     if ctypes.windll.kernel32.GetLongPathNameW(c, out, 32768):
                         c = out.value
                 return os.path.normpath(c)
         except Exception:
             continue
-    return None   # unknown -> caller must refuse to create a startup entry
+    return None
 
-APP_EXE_PATH = _resolve_app_exe_path()   # computed once, at launch
+APP_EXE_PATH = _resolve_app_exe_path()
 
 # --- Inject Local MPV DLL Dependency (Windows) ---
 try:
@@ -115,7 +106,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QListWidget, QListWidgetItem, QFileDialog, QLabel,
     QCheckBox, QMessageBox, QSplitter, QSlider, QComboBox, QDialog,
-    QGridLayout, QSizePolicy, QLineEdit
+    QGridLayout, QSizePolicy, QLineEdit, QMenu, QAbstractItemView
 )
 
 import mpv
@@ -137,7 +128,6 @@ PLAYLIST_EXTENSIONS = {".m3u", ".m3u8", ".pls"}
 IPC_NAME = "ALMP-OpenFile-IPC"
 
 def read_playlist_file(path):
-    """Return the playable files listed inside an .m3u / .m3u8 / .pls playlist."""
     out = []
     base = os.path.dirname(path)
     is_pls = path.lower().endswith(".pls")
@@ -167,8 +157,8 @@ WIN_STARTUP_DIR = Path(os.getenv('APPDATA') or Path.home()) / r"Microsoft\Window
 WIN_SHORTCUT = WIN_STARTUP_DIR / "ALMP.lnk"
 STARTUP_MARKER = Path(os.getenv("APPDATA") or Path.home()) / "ALMP" / "startup_target.txt"
 
-# --- Saved settings (volume, toggles, interface size) ---
 SETTINGS_PATH = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP" / "settings.json"
+RESUME_PATH = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP" / "resume.json"
 SCALE_CHOICES = [("Normal (100%)", 1.0), ("Large (125%)", 1.25), ("Extra large (150%)", 1.5), ("Huge (200%)", 2.0)]
 
 def load_settings():
@@ -184,7 +174,20 @@ def save_settings(data):
     except Exception:
         pass
 
-# --- Crisp vector icons, drawn in code (no image files, any screen size) ---
+def load_resume():
+    try:
+        return json.loads(RESUME_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def save_resume(data):
+    try:
+        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
+        RESUME_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+# --- Crisp vector icons ---
 _ICON_CACHE = {}
 
 def make_icon(kind, color="#e6e6e6", px=20):
@@ -197,12 +200,12 @@ def make_icon(kind, color="#e6e6e6", px=20):
         dpr = float(QApplication.primaryScreen().devicePixelRatio())
     except Exception:
         pass
-    big = 96                      # draw large, then shrink smoothly
+    big = 96
     pm = QPixmap(big, big)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    u = big / 24.0                # 24 x 24 design grid
+    u = big / 24.0
     col = QColor(color)
     pen = QPen(col)
     pen.setWidthF(2.2 * u)
@@ -236,10 +239,10 @@ def make_icon(kind, color="#e6e6e6", px=20):
         poly([(19, 5), (9, 12), (19, 19)]); bar(4.5, 5, 3, 14)
     elif kind == "next":
         poly([(5, 5), (15, 12), (5, 19)]); bar(16.5, 5, 3, 14)
-    elif kind == "fullscreen":      # corners point OUT = enter fullscreen
+    elif kind == "fullscreen":
         line((4, 9), (4, 4), (9, 4)); line((15, 4), (20, 4), (20, 9))
         line((4, 15), (4, 20), (9, 20)); line((20, 15), (20, 20), (15, 20))
-    elif kind == "exitfullscreen":  # corners point IN = leave fullscreen
+    elif kind == "exitfullscreen":
         line((9, 4), (9, 9), (4, 9)); line((15, 4), (15, 9), (20, 9))
         line((4, 15), (9, 15), (9, 20)); line((20, 15), (15, 15), (15, 20))
     elif kind == "close":
@@ -253,6 +256,16 @@ def make_icon(kind, color="#e6e6e6", px=20):
         poly([(3.5, 9), (8, 9), (13, 4.8), (13, 19.2), (8, 15), (3.5, 15)])
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawArc(QRectF(10 * u, 7.5 * u, 9 * u, 9 * u), -50 * 16, 100 * 16)
+    elif kind == "settings":
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QRectF(9 * u, 9 * u, 6 * u, 6 * u))
+        for i in range(8):
+            angle = i * 45
+            p.save()
+            p.translate(12 * u, 12 * u)
+            p.rotate(angle)
+            p.drawLine(pt(0, -7), pt(0, -10))
+            p.restore()
     p.end()
 
     pm = pm.scaled(int(px * dpr), int(px * dpr), Qt.AspectRatioMode.KeepAspectRatio,
@@ -263,8 +276,6 @@ def make_icon(kind, color="#e6e6e6", px=20):
     return icon
 
 class FullscreenTitlePill(QWidget):
-    """Rounded, slightly see-through 'now playing' pill shown over fullscreen video.
-    Painted by hand so the rounded background always draws."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
@@ -296,7 +307,6 @@ class FullscreenTitlePill(QWidget):
         painter.setPen(QColor("#ffffff"))
         painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._text)
         painter.end()
-
 
 class PlayerEventBridge(QObject):
     end_file = pyqtSignal(str)
@@ -342,13 +352,12 @@ class CustomConfirmDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         if sys.platform == "win32":
-            # Always-on-top dialogs behave badly under X11/WSLg window managers
             self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setMinimumWidth(500)
         
         layout = QVBoxLayout(self)
-        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)  # grow to fit the text
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
         lbl = QLabel(message)
         lbl.setWordWrap(True)
         lbl.setMinimumWidth(460)
@@ -370,6 +379,14 @@ class CustomConfirmDialog(QDialog):
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
         self.btn_no.setFocus()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if sys.platform == "win32":
+            try:
+                ctypes.windll.user32.SetForegroundWindow(int(self.winId()))
+            except Exception:
+                pass
 
 class FolderScanner(QThread):
     files_found = pyqtSignal(list)
@@ -408,7 +425,10 @@ class MediaWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Alexbed Light Media Player")
-        self.resize(1200, 700)
+        
+        settings = load_settings()
+        geom = settings.get("window_geometry", [1200, 700])
+        self.resize(geom[0], geom[1])
 
         icon_file_path = get_app_icon_path()
         if icon_file_path:
@@ -433,6 +453,8 @@ class MediaWindow(QMainWindow):
         self._ext_queue = []
         self._last_ext_time = 0.0
         self.ipc_server = None
+        self.resume_data = load_resume()
+        self.active_menu = None
 
         self.track_timer = QTimer(self)
         self.track_timer.setInterval(250)
@@ -450,9 +472,7 @@ class MediaWindow(QMainWindow):
         self.installEventFilter(self)
         QTimer.singleShot(100, self._force_focus)
 
-    # --- Open files handed over by Windows ("Open with" / default app) ---
     def start_ipc_server(self):
-        """Lets a 2nd launch (double-clicking another file) pass it to this window."""
         self.ipc_server = QLocalServer(self)
         QLocalServer.removeServer(IPC_NAME)
         if self.ipc_server.listen(IPC_NAME):
@@ -486,8 +506,6 @@ class MediaWindow(QMainWindow):
             return
         paths, self._ext_queue = self._ext_queue, []
         now = time.monotonic()
-        # Files opened within 3 s of each other (multi-select) are added together;
-        # a fresh double-click replaces what was playing.
         if now - self._last_ext_time > 3.0:
             self.clear_playlist()
         self._last_ext_time = now
@@ -513,6 +531,7 @@ class MediaWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_A), self, activated=self._cycle_aspect)
         QShortcut(QKeySequence(Qt.Key.Key_P), self, activated=self._toggle_fs_playlist)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_search)
+        QShortcut(QKeySequence(Qt.Key.Key_S), self, activated=self.take_snapshot)
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, activated=lambda: self._toggle_fullscreen() if self._is_fullscreen else None)
         
         QShortcut(QKeySequence(Qt.Key.Key_MediaPlay), self, activated=self.play_or_resume)
@@ -522,7 +541,6 @@ class MediaWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_MediaPrevious), self, activated=self.previous_track)
 
     def _cycle_aspect(self):
-        """A key: Fit (black bars) -> Fill (crop to fill, no bars) -> Stretch."""
         if not self.player:
             return
         self._aspect_mode = (getattr(self, "_aspect_mode", 0) + 1) % 3
@@ -554,7 +572,6 @@ class MediaWindow(QMainWindow):
         return 0
 
     def _layout_fs_title(self):
-        """Fullscreen title pill: as wide as its text, elided in the middle, centred over the video."""
         name = getattr(self, "_fs_title_full", "")
         area_w = max(300, self.width() - self._drawer_width())
         key = (name, area_w, self.width())
@@ -606,6 +623,10 @@ class MediaWindow(QMainWindow):
             if event.type() == QEvent.Type.MouseButtonDblClick:
                 self._toggle_fullscreen()
                 return True
+            elif event.type() == QEvent.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.RightButton:
+                    self.show_context_menu(event.globalPos())
+                    return True
             elif event.type() == QEvent.Type.MouseMove and self._is_fullscreen:
                 self._on_fs_activity()
             elif event.type() == QEvent.Type.Wheel:
@@ -616,6 +637,109 @@ class MediaWindow(QMainWindow):
                     self.volume_slider.setValue(self.volume_slider.value() - 5)
                 return True
         return super().eventFilter(obj, event)
+
+    def show_context_menu(self, pos):
+        if not self.player or self.player.idle_active:
+            return
+        
+        self.active_menu = QMenu(self)
+        menu = self.active_menu
+        
+        audio_tracks = []
+        sub_tracks = []
+        try:
+            tracks = self.player.track_list
+            if tracks:
+                for track in tracks:
+                    if track.type == "audio":
+                        audio_tracks.append(track)
+                    elif track.type == "sub":
+                        sub_tracks.append(track)
+        except Exception as e:
+            print(f"Error fetching tracks: {e}")
+            
+        if audio_tracks:
+            audio_menu = menu.addMenu("Audio Tracks")
+            for t in audio_tracks:
+                title = getattr(t, "title", "") or getattr(t, "lang", "") or f"Track {t.id}"
+                action = audio_menu.addAction(f"{'✓ ' if getattr(t, 'selected', False) else ''}{title}")
+                action.triggered.connect(lambda checked=False, tid=t.id: self._safe_set_mpv_prop('aid', tid))
+                
+        if sub_tracks:
+            sub_menu = menu.addMenu("Subtitles")
+            action = sub_menu.addAction(f"{'✓ ' if getattr(self.player, 'sid', 'no') == 'no' else ''}Disable")
+            action.triggered.connect(lambda: self._safe_set_mpv_prop('sid', 'no'))
+            for t in sub_tracks:
+                title = getattr(t, "title", "") or getattr(t, "lang", "") or f"Track {t.id}"
+                action = sub_menu.addAction(f"{'✓ ' if getattr(t, 'selected', False) else ''}{title}")
+                action.triggered.connect(lambda checked=False, tid=t.id: self._safe_set_mpv_prop('sid', tid))
+                
+        menu.addSeparator()
+        menu.addAction("Load Subtitle File...", self.load_external_subtitle)
+        menu.addAction("Take Snapshot (S)", self.take_snapshot)
+        menu.addSeparator()
+        
+        aspect_menu = menu.addMenu("Video Size")
+        aspect_menu.addAction("Fit (Original)", lambda: self._set_specific_aspect(0))
+        aspect_menu.addAction("Fill (Cropped)", lambda: self._set_specific_aspect(1))
+        aspect_menu.addAction("Stretch", lambda: self._set_specific_aspect(2))
+        
+        menu.addAction("Fullscreen (F)", self._toggle_fullscreen)
+        
+        # Use popup to prevent blocking the event loop
+        menu.popup(pos)
+
+    def _safe_set_mpv_prop(self, prop, value):
+        if self.player:
+            try:
+                setattr(self.player, prop, value)
+            except Exception as e:
+                print(f"Failed to set {prop} to {value}: {e}")
+
+    def _set_specific_aspect(self, mode):
+        if not self.player:
+            return
+        self._aspect_mode = mode
+        try:
+            if mode == 0:
+                self.player.panscan = 0.0
+                self.player.keepaspect = True
+                name = "Fit"
+            elif mode == 1:
+                self.player.keepaspect = True
+                self.player.panscan = 1.0
+                name = "Fill (cropped)"
+            else:
+                self.player.panscan = 0.0
+                self.player.keepaspect = False
+                name = "Stretch"
+            self.status_label.setText(f"Video size: {name}")
+        except Exception:
+            pass
+
+    def load_external_subtitle(self):
+        if not self.player or self.player.idle_active:
+            return
+        fname, _ = QFileDialog.getOpenFileName(self, "Load Subtitle", "", "Subtitles (*.srt *.ass *.vtt *.ssa)")
+        if fname:
+            try:
+                self.player.sub_add(fname)
+                self.status_label.setText(f"Subtitle loaded: {Path(fname).name}")
+            except Exception as e:
+                QMessageBox.warning(self, "Subtitle Error", f"Could not load subtitle:\n{e}")
+
+    def take_snapshot(self):
+        if not self.player or self.player.idle_active or not self.current_path:
+            return
+        try:
+            pictures_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation)
+            base_name = Path(self.current_path).stem
+            timestamp = int(time.time())
+            out_path = os.path.join(pictures_dir, f"{base_name}_snapshot_{timestamp}.png")
+            self.player.screenshot_to_file(out_path)
+            self.status_label.setText(f"Snapshot saved to Pictures: {Path(out_path).name}")
+        except Exception as e:
+            self.status_label.setText(f"Snapshot failed: {e}")
 
     def _build_ui(self):
         self.central_widget = QWidget(self)
@@ -629,7 +753,7 @@ class MediaWindow(QMainWindow):
         self.left_panel = QWidget()
         self.left_panel.setObjectName("leftPanel")
         self.left_layout = QVBoxLayout(self.left_panel)
-        self.left_layout.setContentsMargins(0, 0, 0, 0)   # video runs edge to edge
+        self.left_layout.setContentsMargins(0, 0, 0, 0)
         self.left_layout.setSpacing(0)
 
         self.video = QWidget()
@@ -660,7 +784,7 @@ class MediaWindow(QMainWindow):
 
         self.status_label = QLabel("Drag & Drop folders/videos here or choose an action.")
         self.status_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #cfd8dc;")
-        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # long names never widen the window
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.time_label = QLabel("00:00 / 00:00")
         self.time_label.setStyleSheet("font-size: 12px; color: #9aa4a8;")
         status_row = QHBoxLayout()
@@ -677,7 +801,6 @@ class MediaWindow(QMainWindow):
         control_btn_style = "font-size: 15px; padding: 9px 16px; font-weight: 600;"
         ICON_SZ = QSize(18, 18)
 
-        # left cluster: volume
         volume_box = QWidget()
         volume_box.setFixedWidth(200)
         volume_row = QHBoxLayout(volume_box)
@@ -699,7 +822,6 @@ class MediaWindow(QMainWindow):
         controls_layout.addWidget(volume_box)
         controls_layout.addStretch(1)
 
-        # centre cluster: transport
         self.previous_button = QPushButton("Prev")
         self.previous_button.setIcon(make_icon("prev", "#e6e6e6", 18))
         self.previous_button.setIconSize(ICON_SZ)
@@ -720,7 +842,7 @@ class MediaWindow(QMainWindow):
         self.next_button = QPushButton("Next")
         self.next_button.setIcon(make_icon("next", "#e6e6e6", 18))
         self.next_button.setIconSize(ICON_SZ)
-        self.next_button.setLayoutDirection(Qt.LayoutDirection.RightToLeft)   # icon after the text
+        self.next_button.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self.next_button.setStyleSheet(control_btn_style)
         self.next_button.clicked.connect(self.next_track)
         self.next_button.setFixedWidth(112)
@@ -733,9 +855,17 @@ class MediaWindow(QMainWindow):
         self.speed_combo.setStyleSheet("font-size: 14px; padding: 4px;")
         self.speed_combo.setFixedWidth(84)
         controls_layout.addWidget(self.speed_combo)
+
+        self.tracks_button = QPushButton()
+        self.tracks_button.setIcon(make_icon("settings", "#e6e6e6", 18))
+        self.tracks_button.setIconSize(ICON_SZ)
+        self.tracks_button.setFixedSize(42, 38)
+        self.tracks_button.setToolTip("Audio / Subtitle Tracks (or Right-Click Video)")
+        self.tracks_button.clicked.connect(lambda: self.show_context_menu(self.tracks_button.mapToGlobal(QPoint(0, self.tracks_button.height()))))
+        controls_layout.addWidget(self.tracks_button)
+        
         controls_layout.addStretch(1)
 
-        # right cluster: playlist drawer (fullscreen only) + fullscreen toggle
         right_box = QWidget()
         right_box.setFixedWidth(200)
         right_row = QHBoxLayout(right_box)
@@ -750,11 +880,13 @@ class MediaWindow(QMainWindow):
         self.playlist_toggle_button.clicked.connect(self._toggle_fs_playlist)
         self.playlist_toggle_button.hide()
         right_row.addWidget(self.playlist_toggle_button)
+        
         self.fullscreen_button = QPushButton()
         self.fullscreen_button.setIconSize(ICON_SZ)
         self.fullscreen_button.setFixedSize(42, 38)
         self.fullscreen_button.clicked.connect(self._toggle_fullscreen)
         right_row.addWidget(self.fullscreen_button)
+        
         self.fs_close_button = QPushButton()
         self.fs_close_button.setObjectName("closeButton")
         self.fs_close_button.setIcon(make_icon("close", "#e6e6e6", 18))
@@ -809,16 +941,24 @@ class MediaWindow(QMainWindow):
         self.playlist.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.playlist.itemDoubleClicked.connect(self.play_selected_item)
         self.playlist.setStyleSheet("QListWidget { font-size: 13px; } QListWidget::item { padding: 7px 8px; }")
-        self.playlist.setUniformItemSizes(True)                       # big speed-up for huge lists
+        self.playlist.setUniformItemSizes(True)
         self.playlist.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.playlist.setTextElideMode(Qt.TextElideMode.ElideMiddle)  # long names keep their ending (e.g. .mp4)
+        self.playlist.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.playlist.setWordWrap(False)
+        
+        self.playlist.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.playlist.model().rowsMoved.connect(self._on_playlist_reordered)
+        
         self.right_layout.addWidget(self.playlist, stretch=1)
 
         self.options_widget_1 = QWidget()
         self.options_layout_1 = QHBoxLayout(self.options_widget_1)
         self.options_layout_1.setContentsMargins(0, 0, 0, 0)
-        self.options_layout_1.setSpacing(6)
+        self.options_layout_1.setSpacing(4)
+
+        self.open_file_button = QPushButton("Add Files")
+        self.open_file_button.clicked.connect(self.choose_files)
+        self.options_layout_1.addWidget(self.open_file_button)
 
         self.open_folder_button = QPushButton("Open Folder")
         self.open_folder_button.clicked.connect(self.choose_folder)
@@ -914,10 +1054,6 @@ class MediaWindow(QMainWindow):
                 cursor_autohide="no",
             )
             if sys.platform.startswith("linux"):
-                # WSL has no real GPU for OpenGL (Mesa/ZINK errors). If mpv tries the
-                # default GPU video output and it fails, its fallback aborts the whole
-                # app ("vo_x11_init: Assertion !vo->x11 failed"). Use the plain
-                # software X11 output there. Override with: ALMP_VO=gpu ./ALMP
                 forced_vo = os.environ.get("ALMP_VO")
                 if forced_vo:
                     mpv_opts["vo"] = forced_vo
@@ -929,8 +1065,8 @@ class MediaWindow(QMainWindow):
                     if in_wsl:
                         mpv_opts["vo"] = "x11"
                         mpv_opts["hwdec"] = "no"
-                        mpv_opts["profile"] = "fast"        # cheaper scaling
-                        mpv_opts["vd_lavc_fast"] = True     # faster (slightly lower quality) decoding
+                        mpv_opts["profile"] = "fast"
+                        mpv_opts["vd_lavc_fast"] = True
             self.player = mpv.MPV(**mpv_opts)
             self.player.volume = self.volume_slider.value()
 
@@ -942,6 +1078,18 @@ class MediaWindow(QMainWindow):
             self.status_label.setText("Media player engine ready.")
         except Exception as e:
             self.status_label.setText(f"Media Player Initialization Error: {e}")
+
+    def _on_playlist_reordered(self, parent, start, end, destination, row):
+        new_files = []
+        for i in range(self.playlist.count()):
+            new_files.append(self.playlist.item(i).data(Qt.ItemDataRole.UserRole))
+        
+        self.files = new_files
+        
+        if self.current_path in self.files:
+            self.current_index = self.files.index(self.current_path)
+        else:
+            self.current_index = -1
 
     def _update_playlist_count(self, visible=None):
         total = len(self.files)
@@ -997,6 +1145,7 @@ class MediaWindow(QMainWindow):
             "shuffle": self.shuffle_checkbox.isChecked(),
             "loop_single": self.loop_single_checkbox.isChecked(),
             "remove_played": self.remove_played_checkbox.isChecked(),
+            "window_geometry": [self.width(), self.height()]
         })
         save_settings(data)
 
@@ -1016,21 +1165,16 @@ class MediaWindow(QMainWindow):
         self.audio_art_label.resize(self.video.width(), self.video.height())
         super().resizeEvent(event)
 
-    # --- ROBUST CROSS-PLATFORM STARTUP LOGIC ---
     def check_startup_state(self):
         if sys.platform == "win32":
             if WIN_SHORTCUT.exists():
                 self.startup_checkbox.blockSignals(True)
                 self.startup_checkbox.setChecked(True)
                 self.startup_checkbox.blockSignals(False)
-                # Self-heal: if the app was moved (USB letter changed, folder
-                # renamed, old shortcut pointing at python.exe...) re-point it here.
                 if self._is_compiled() and APP_EXE_PATH:
                     threading.Thread(target=self._repair_startup_shortcut, daemon=True).start()
             else:
                 self.startup_checkbox.setChecked(False)
-                
-            # Clean up old registry entry from previous versions
             try:
                 key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_PATH, 0, winreg.KEY_SET_VALUE)
                 try:
@@ -1040,7 +1184,6 @@ class MediaWindow(QMainWindow):
                 winreg.CloseKey(key)
             except Exception:
                 pass
-                
         else:
             if LINUX_DESKTOP_FILE.exists():
                 try:
@@ -1061,8 +1204,7 @@ class MediaWindow(QMainWindow):
 
     @staticmethod
     def _write_startup_shortcut(exe_path):
-        """Create/overwrite the Startup shortcut so it targets exe_path."""
-        def q(v):  # PowerShell single-quote escaping
+        def q(v):
             return "'" + str(v).replace("'", "''") + "'"
         ps = (
             "$s=(New-Object -ComObject WScript.Shell).CreateShortcut(%s);"
@@ -1079,9 +1221,7 @@ class MediaWindow(QMainWindow):
             pass
 
     def _repair_startup_shortcut(self):
-        """Runs in background: fix the Startup shortcut if it points elsewhere."""
         try:
-            # Fast path: we wrote the shortcut for this exact exe before -> no PowerShell needed
             if STARTUP_MARKER.exists() and \
                STARTUP_MARKER.read_text(encoding="utf-8").strip() == os.path.normcase(APP_EXE_PATH):
                 return
@@ -1097,15 +1237,11 @@ class MediaWindow(QMainWindow):
             pass
 
     def toggle_startup(self, checked):
-        # --- THE OFFICIAL NUITKA CHECK ---
         is_compiled = hasattr(sys, "frozen") or "__compiled__" in globals()
-        
         if not is_compiled:
-            # Block signals to prevent the double-popup bug!
             self.startup_checkbox.blockSignals(True)
             self.startup_checkbox.setChecked(False)
             self.startup_checkbox.blockSignals(False)
-            
             self._dialog_active = True
             QMessageBox.warning(self, "Notice", "Run at Startup only works in the compiled .exe version.")
             self._dialog_active = False
@@ -1158,11 +1294,10 @@ class MediaWindow(QMainWindow):
 
     def _load_album_art(self, file_path):
         try:
-            from mutagen import File as MutagenFile   # loaded on first use, keeps launch fast
+            from mutagen import File as MutagenFile
             audio = MutagenFile(file_path)
             if audio is None:
                 return None
-            
             art_data = None
             if hasattr(audio, 'tags') and 'APIC:' in audio.tags:
                 art_data = audio.tags['APIC:'].data
@@ -1170,7 +1305,6 @@ class MediaWindow(QMainWindow):
                 art_data = audio.pictures[0].data
             elif hasattr(audio, 'tags') and 'covr' in audio.tags:
                 art_data = bytes(audio.tags['covr'][0])
-                
             if art_data:
                 image = QImage.fromData(art_data)
                 if not image.isNull():
@@ -1215,20 +1349,16 @@ class MediaWindow(QMainWindow):
             QMessageBox.warning(self, "Remove from List", "Please select a file to remove.")
             self._dialog_active = False
             return
-
         path = item.data(Qt.ItemDataRole.UserRole)
         try:
             idx = self.files.index(path)
         except ValueError:
             return
-
         is_currently_playing = (idx == self.current_index)
-
         self.files.pop(idx)
         self.playlist.takeItem(idx)
         self._update_playlist_count()
         self.status_label.setText(f"Removed from list: {Path(path).name}")
-
         if is_currently_playing:
             if self.player:
                 self.player.stop()
@@ -1240,7 +1370,6 @@ class MediaWindow(QMainWindow):
             self.progress_slider.setMaximum(1)
             self.track_timer.stop()
             self._end_event_pending = False
-            
             if self.files:
                 self.next_track()
         else:
@@ -1248,7 +1377,6 @@ class MediaWindow(QMainWindow):
                 self.current_index -= 1
 
     def _set_mpv_pause(self, value):
-        """Pause/resume without ever blocking the window if mpv's video thread is busy."""
         if not self.player:
             return
         try:
@@ -1269,12 +1397,10 @@ class MediaWindow(QMainWindow):
             QMessageBox.warning(self, "Delete File", "Please select a file in the playlist to delete.")
             self._dialog_active = False
             return
-
         path = item.data(Qt.ItemDataRole.UserRole)
         if not path or not os.path.exists(path):
             self.status_label.setText("File no longer exists.")
             return
-
         was_fullscreen = self._is_fullscreen
         was_playing = False
         if self.player:
@@ -1284,28 +1410,23 @@ class MediaWindow(QMainWindow):
                     self._set_mpv_pause(True)
             except Exception:
                 pass
-
         self.hide_timer.stop()
         self._show_cursor()
         self.video.setMouseTracking(True)
-
         if was_fullscreen:
             self._is_fullscreen = False
             self._exit_fullscreen_ui()
             self.showMaximized()
             self.activateWindow()
             self.raise_()
-
             self.left_panel.show()
             self.right_panel.show()
             self.control_panel_widget.show()
             self.fullscreen_title_label.hide()
-
             QApplication.processEvents()
             available_width = self.splitter.width()
             self.splitter.setSizes([int(available_width * 0.75), int(available_width * 0.25)])
             QApplication.processEvents()
-
         self._dialog_active = True
         dialog = CustomConfirmDialog(
             self, "Delete File",
@@ -1315,25 +1436,21 @@ class MediaWindow(QMainWindow):
         dialog.setModal(True)
         reply = dialog.exec()
         self._dialog_active = False
-
         if was_fullscreen:
             self.showFullScreen()
             self._is_fullscreen = True
             self._enter_fullscreen_ui()
             QApplication.processEvents()
-
             self._fs_drawer_wanted = False
             self.left_panel.show()
             self.right_panel.hide()
             self.control_panel_widget.hide()
             self.fullscreen_title_label.hide()
-
             self._show_cursor()
             self.hide_timer.start()
             self.video.setMouseTracking(True)
             self.video.setFocus()
             QApplication.processEvents()
-
         if reply != QDialog.DialogCode.Accepted:
             if was_playing and self.player:
                 try:
@@ -1342,20 +1459,17 @@ class MediaWindow(QMainWindow):
                 except Exception:
                     pass
             return
-
         try:
             idx = self.files.index(path)
         except ValueError:
             self.status_label.setText("The selected file is no longer in the playlist.")
             return
-
         is_currently_playing = (path == self.current_path)
         if is_currently_playing and self.player:
             try:
                 self.player.stop()
             except Exception:
                 pass
-
         try:
             os.remove(path)
         except Exception as exc:
@@ -1366,12 +1480,10 @@ class MediaWindow(QMainWindow):
                 self.player.pause = False
                 self._set_play_ui(True)
             return
-
         self.files.pop(idx)
         self.playlist.takeItem(idx)
         self._update_playlist_count()
         self.status_label.setText(f"Permanently deleted: {Path(path).name}")
-
         if is_currently_playing:
             self.current_index = -1
             self.current_path = None
@@ -1381,7 +1493,6 @@ class MediaWindow(QMainWindow):
             self.progress_slider.setMaximum(1)
             self.track_timer.stop()
             self._end_event_pending = False
-            
             if self.files:
                 self.next_track()
             else:
@@ -1412,11 +1523,15 @@ class MediaWindow(QMainWindow):
             current_time = getattr(self.player, "time_pos", 0) or 0
             duration = getattr(self.player, "duration", 0) or 1
             key = (int(current_time), int(duration))
-            if duration > 0 and key != getattr(self, "_last_tick_key", None):   # repaint only when the second changes
+            if duration > 0 and key != getattr(self, "_last_tick_key", None):
                 self._last_tick_key = key
                 self.progress_slider.setMaximum(int(duration))
                 self.progress_slider.setValue(int(current_time))
                 self.time_label.setText(f"{self._fmt_time(current_time)} / {self._fmt_time(duration)}")
+                
+                if current_time > 0 and int(current_time) % 5 == 0 and self.current_path:
+                    self.resume_data[self.current_path] = int(current_time)
+                    save_resume(self.resume_data)
         except Exception:
             pass
 
@@ -1443,16 +1558,15 @@ class MediaWindow(QMainWindow):
             self._on_fs_activity()
         super().mouseMoveEvent(event)
 
-    # ----- fullscreen: controls float over the video (the picture never resizes) -----
     def _enter_fullscreen_ui(self):
         bar = self.control_panel_widget
         if bar.parent() is self:
             return
         self.left_layout.removeWidget(bar)
         bar.setParent(self)
-        bar.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)   # sits above mpv's video window
+        bar.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         bar.hide()
-        self.right_panel.setParent(self)                             # playlist becomes a floating drawer
+        self.right_panel.setParent(self)
         self.right_panel.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         self.right_panel.hide()
         self.playlist_toggle_button.show()
@@ -1485,7 +1599,6 @@ class MediaWindow(QMainWindow):
         bar.raise_()
 
     def _show_fs_overlays(self):
-        """Bar and playlist drawer always appear together."""
         bar = self.control_panel_widget
         if bar.parent() is not self:
             return
@@ -1511,7 +1624,6 @@ class MediaWindow(QMainWindow):
     def _hide_fullscreen_overlays(self):
         if not self._is_fullscreen or self._is_scrubbing:
             return
-        # stay open while the pointer is on the bar OR the drawer
         pos = QCursor.pos()
         for w in (self.control_panel_widget, self.right_panel):
             if w.isVisible() and w.width() > 0 and w.rect().contains(w.mapFromGlobal(pos)):
@@ -1594,6 +1706,16 @@ class MediaWindow(QMainWindow):
         if paths:
             self.scan_targets(paths)
 
+    def choose_files(self):
+        files, _ = QFileDialog.getOpenFileNames(
+            self, 
+            "Select Media Files", 
+            "", 
+            "Media Files (*.mp4 *.mkv *.avi *.mp3 *.flac *.wav *.m3u);;All Files (*)"
+        )
+        if files:
+            self.scan_targets(files)
+
     def choose_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select media folder")
         if folder:
@@ -1603,11 +1725,12 @@ class MediaWindow(QMainWindow):
         if self.scanner is not None and self.scanner.isRunning():
             return
         self.status_label.setText("Processing imported tracks...")
+        self.open_file_button.setEnabled(False)
         self.open_folder_button.setEnabled(False)
         self.scanner = FolderScanner(targets)
         self.scanner.files_found.connect(self._on_files_found)
         self.scanner.scan_error.connect(self._on_scan_error)
-        self.scanner.finished.connect(lambda: self.open_folder_button.setEnabled(True))
+        self.scanner.finished.connect(lambda: (self.open_file_button.setEnabled(True), self.open_folder_button.setEnabled(True)))
         self.scanner.start()
 
     def _on_files_found(self, paths):
@@ -1621,7 +1744,6 @@ class MediaWindow(QMainWindow):
             QTimer.singleShot(0, self._add_next_chunk)
 
     def _add_next_chunk(self):
-        """Adds up to 1,500 files per tick; the UI stays responsive even with 50,000+ files."""
         pending = getattr(self, "_pending_paths", [])
         if not pending:
             self._chunk_running = False
@@ -1715,7 +1837,13 @@ class MediaWindow(QMainWindow):
             self.audio_art_label.hide()
 
         if self.player:
+            self.speed_combo.setCurrentText("1.0x")
             self.player.loadfile(path, mode="replace")
+            
+            resume_time = self.resume_data.get(path, 0)
+            if resume_time > 0:
+                QTimer.singleShot(500, lambda: self.player.seek(resume_time, reference="absolute"))
+                
             self.player.pause = False
             self.status_label.setText(f"Playing: {Path(path).name}")
             self._set_play_ui(True)
@@ -1734,7 +1862,6 @@ class MediaWindow(QMainWindow):
     def previous_track(self):
         if not self.files:
             return
-        
         if self.shuffle_enabled:
             if len(self.files) > 1:
                 prev_idx = self.current_index
@@ -1752,7 +1879,6 @@ class MediaWindow(QMainWindow):
     def next_track(self):
         if not self.files:
             return
-        
         if self.shuffle_enabled:
             if len(self.files) > 1:
                 next_idx = self.current_index
@@ -1770,21 +1896,21 @@ class MediaWindow(QMainWindow):
     def _handle_end_file(self, reason):
         if self._closing:
             return
-
         reason = str(reason).upper()
-        
         if reason != "EOF":
             return
-
         if self._end_event_pending:
             return
-
         self._end_event_pending = True
         self.track_timer.stop()
             
         if self.loop_single_checkbox.isChecked() and self.current_index >= 0:
             self.play_index(self.current_index)
             return
+
+        if self.current_path in self.resume_data:
+            self.resume_data.pop(self.current_path, None)
+            save_resume(self.resume_data)
 
         if self.remove_played_checkbox.isChecked():
             self._remove_current_and_advance()
@@ -1794,7 +1920,6 @@ class MediaWindow(QMainWindow):
     def _remove_current_and_advance(self):
         if self.current_index < 0 or self.current_index >= len(self.files):
             return
-
         idx_to_remove = self.current_index
         self.files.pop(idx_to_remove)
         self.playlist.takeItem(idx_to_remove)
@@ -1810,7 +1935,6 @@ class MediaWindow(QMainWindow):
             self.track_timer.stop()
             self.audio_art_label.hide()
             self._end_event_pending = False
-            
             if self.player:
                 self.player.stop()
             return
@@ -1846,14 +1970,13 @@ if __name__ == "__main__":
     if sys.platform != "win32":
         try:
             import faulthandler
-            faulthandler.enable()   # a crash now prints the Python stack to the terminal
+            faulthandler.enable()
         except Exception:
             pass
     temp_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation)
     lock_file = QLockFile(os.path.join(temp_dir, "ALMP.lock"))
     cli_paths = [os.path.abspath(a) for a in sys.argv[1:] if a and not a.startswith("-")]
     if not lock_file.tryLock(100):
-        # ALMP is already running: hand the file(s) to it, then quit
         from PyQt6.QtCore import QCoreApplication
         _qc = QCoreApplication(sys.argv)
         sock = QLocalSocket()
@@ -1865,10 +1988,9 @@ if __name__ == "__main__":
             sock.disconnectFromServer()
         sys.exit(0)
 
-    # Taskbar Icon Fix (Windows Only)
     if sys.platform == "win32":
         try:
-            myappid = "Alexbed.LightMediaPlayer.ALMP.7.2" 
+            myappid = "Alexbed.LightMediaPlayer.ALMP.7.5" 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass
@@ -1882,10 +2004,9 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     if sys.platform != "win32":
         import locale
-        locale.setlocale(locale.LC_NUMERIC, "C")   # libmpv refuses to start otherwise
+        locale.setlocale(locale.LC_NUMERIC, "C")
     print(f"[ALMP] Qt platform: {app.platformName()}")
     
-    # --- GLOBAL DARK THEME STYLESHEET ---
     dark_stylesheet = """
         QWidget {
             color: #e6e6e6;
@@ -1976,7 +2097,7 @@ if __name__ == "__main__":
     if icon_path:
         window.setWindowIcon(QIcon(icon_path))
     if sys.platform != "win32":
-        app.setDesktopFileName("ALMP")   # lets Linux match the window to ALMP.desktop (taskbar icon)
+        app.setDesktopFileName("ALMP")
 
     window.show()
     window.start_ipc_server()

@@ -75,8 +75,7 @@ python main.py
 ```
 
 - **Windows:** put `mpv-2.dll` (a libmpv build) in a folder named `runtime` next to `main.py`.
-- **Linux (experimental, tested on Ubuntu under WSL only):** `sudo apt install libmpv2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xkb1`.
-  ALMP uses X11 (xcb) on Linux because mpv embeds into the window that way.
+- **Linux (experimental):** Build from source (see "Run from source" below). Tested on Ubuntu under WSL only.
 
 ### Build the portable app
 
@@ -100,3 +99,8 @@ You may use, study, share and change it. See [LICENSE](LICENSE).
 
 ALMP is built on other free software (PyQt6, Qt, mpv, FFmpeg, mutagen and others).
 Their licences are listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+
+## Community & Roadmap
+- See [ROADMAP.md](ROADMAP.md) for what is coming next.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) if you want to help.
+- See [SECURITY.md](SECURITY.md) to report a security issue.
