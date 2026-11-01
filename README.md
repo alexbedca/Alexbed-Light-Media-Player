@@ -4,6 +4,8 @@ A simple, free media player for Windows, built on the [mpv](https://mpv.io) play
 ALMP is made for people who just want to press play: big clear buttons, a dark modern look,
 and no accounts, ads or tracking.
 
+![ALMP Preview](images/screenshot.png)
+
 **Version:** 7.2.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
@@ -75,7 +77,7 @@ python main.py
 ```
 
 - **Windows:** put `mpv-2.dll` (a libmpv build) in a folder named `runtime` next to `main.py`.
-- **Linux (experimental):** Build from source (see "Run from source" below). Tested on Ubuntu under WSL only.
+- **Linux (experimental, tested on Ubuntu under WSL only):** `sudo apt install libmpv2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xkb1`. ALMP uses X11 on Linux because mpv embeds into the window that way.
 
 ### Build the portable app
 

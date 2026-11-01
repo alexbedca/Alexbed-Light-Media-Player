@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__version__ = "7.5.1"
+__version__ = "7.5.2"
 
 import os
 import sys
@@ -454,7 +454,6 @@ class MediaWindow(QMainWindow):
         self._last_ext_time = 0.0
         self.ipc_server = None
         self.resume_data = load_resume()
-        self.active_menu = None
 
         self.track_timer = QTimer(self)
         self.track_timer.setInterval(250)
@@ -623,10 +622,11 @@ class MediaWindow(QMainWindow):
             if event.type() == QEvent.Type.MouseButtonDblClick:
                 self._toggle_fullscreen()
                 return True
-            elif event.type() == QEvent.Type.MouseButtonPress:
-                if event.button() == Qt.MouseButton.RightButton:
-                    self.show_context_menu(event.globalPos())
-                    return True
+            # RIGHT CLICK DISABLED TO PREVENT CRASH
+            # elif event.type() == QEvent.Type.MouseButtonPress:
+            #     if event.button() == Qt.MouseButton.RightButton:
+            #         self.show_context_menu(event.globalPos())
+            #         return True
             elif event.type() == QEvent.Type.MouseMove and self._is_fullscreen:
                 self._on_fs_activity()
             elif event.type() == QEvent.Type.Wheel:
@@ -642,52 +642,55 @@ class MediaWindow(QMainWindow):
         if not self.player or self.player.idle_active:
             return
         
-        self.active_menu = QMenu(self)
-        menu = self.active_menu
-        
-        audio_tracks = []
-        sub_tracks = []
         try:
-            tracks = self.player.track_list
-            if tracks:
-                for track in tracks:
-                    if track.type == "audio":
-                        audio_tracks.append(track)
-                    elif track.type == "sub":
-                        sub_tracks.append(track)
-        except Exception as e:
-            print(f"Error fetching tracks: {e}")
+            self.active_menu = QMenu(self)
+            menu = self.active_menu
             
-        if audio_tracks:
-            audio_menu = menu.addMenu("Audio Tracks")
-            for t in audio_tracks:
-                title = getattr(t, "title", "") or getattr(t, "lang", "") or f"Track {t.id}"
-                action = audio_menu.addAction(f"{'✓ ' if getattr(t, 'selected', False) else ''}{title}")
-                action.triggered.connect(lambda checked=False, tid=t.id: self._safe_set_mpv_prop('aid', tid))
+            audio_tracks = []
+            sub_tracks = []
+            try:
+                tracks = self.player.track_list
+                if tracks:
+                    for track in tracks:
+                        if track.type == "audio":
+                            audio_tracks.append(track)
+                        elif track.type == "sub":
+                            sub_tracks.append(track)
+            except Exception:
+                pass
                 
-        if sub_tracks:
-            sub_menu = menu.addMenu("Subtitles")
-            action = sub_menu.addAction(f"{'✓ ' if getattr(self.player, 'sid', 'no') == 'no' else ''}Disable")
-            action.triggered.connect(lambda: self._safe_set_mpv_prop('sid', 'no'))
-            for t in sub_tracks:
-                title = getattr(t, "title", "") or getattr(t, "lang", "") or f"Track {t.id}"
-                action = sub_menu.addAction(f"{'✓ ' if getattr(t, 'selected', False) else ''}{title}")
-                action.triggered.connect(lambda checked=False, tid=t.id: self._safe_set_mpv_prop('sid', tid))
-                
-        menu.addSeparator()
-        menu.addAction("Load Subtitle File...", self.load_external_subtitle)
-        menu.addAction("Take Snapshot (S)", self.take_snapshot)
-        menu.addSeparator()
-        
-        aspect_menu = menu.addMenu("Video Size")
-        aspect_menu.addAction("Fit (Original)", lambda: self._set_specific_aspect(0))
-        aspect_menu.addAction("Fill (Cropped)", lambda: self._set_specific_aspect(1))
-        aspect_menu.addAction("Stretch", lambda: self._set_specific_aspect(2))
-        
-        menu.addAction("Fullscreen (F)", self._toggle_fullscreen)
-        
-        # Use popup to prevent blocking the event loop
-        menu.popup(pos)
+            if audio_tracks:
+                audio_menu = menu.addMenu("Audio Tracks")
+                for t in audio_tracks:
+                    title = getattr(t, "title", "") or getattr(t, "lang", "") or f"Track {t.id}"
+                    action = audio_menu.addAction(f"{'✓ ' if getattr(t, 'selected', False) else ''}{title}")
+                    action.triggered.connect(lambda checked=False, tid=t.id: self._safe_set_mpv_prop('aid', tid))
+                    
+            if sub_tracks:
+                sub_menu = menu.addMenu("Subtitles")
+                action = sub_menu.addAction(f"{'✓ ' if getattr(self.player, 'sid', 'no') == 'no' else ''}Disable")
+                action.triggered.connect(lambda: self._safe_set_mpv_prop('sid', 'no'))
+                for t in sub_tracks:
+                    title = getattr(t, "title", "") or getattr(t, "lang", "") or f"Track {t.id}"
+                    action = sub_menu.addAction(f"{'✓ ' if getattr(t, 'selected', False) else ''}{title}")
+                    action.triggered.connect(lambda checked=False, tid=t.id: self._safe_set_mpv_prop('sid', tid))
+                    
+            menu.addSeparator()
+            menu.addAction("Load Subtitle File...", self.load_external_subtitle)
+            menu.addAction("Take Snapshot (S)", self.take_snapshot)
+            menu.addSeparator()
+            
+            aspect_menu = menu.addMenu("Video Size")
+            aspect_menu.addAction("Fit (Original)", lambda: self._set_specific_aspect(0))
+            aspect_menu.addAction("Fill (Cropped)", lambda: self._set_specific_aspect(1))
+            aspect_menu.addAction("Stretch", lambda: self._set_specific_aspect(2))
+            
+            menu.addAction("Fullscreen (F)", self._toggle_fullscreen)
+            
+            menu.popup(pos)
+        except Exception as e:
+            print(f"Error showing context menu: {e}")
+            self.status_label.setText("Right-click menu failed. Please use the Settings button on the bottom bar.")
 
     def _safe_set_mpv_prop(self, prop, value):
         if self.player:
@@ -860,7 +863,7 @@ class MediaWindow(QMainWindow):
         self.tracks_button.setIcon(make_icon("settings", "#e6e6e6", 18))
         self.tracks_button.setIconSize(ICON_SZ)
         self.tracks_button.setFixedSize(42, 38)
-        self.tracks_button.setToolTip("Audio / Subtitle Tracks (or Right-Click Video)")
+        self.tracks_button.setToolTip("Audio / Subtitle Tracks")
         self.tracks_button.clicked.connect(lambda: self.show_context_menu(self.tracks_button.mapToGlobal(QPoint(0, self.tracks_button.height()))))
         controls_layout.addWidget(self.tracks_button)
         
