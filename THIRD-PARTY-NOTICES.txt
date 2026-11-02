@@ -6,42 +6,56 @@ GNU General Public License, version 3 or later (see the file LICENSE).
 
 ALMP is built from, and ships together with, the free software listed below.
 Each component remains under its own licence. Together they form one program
-that is distributed under the GPL-3.0 terms.
+that is distributed under the GPL-3.0 terms. The full licence texts are in the
+LICENSES folder next to this file (see LICENSES\README.txt).
 
 Component          Licence                                 Where to get the source
 -----------------  --------------------------------------  ---------------------------------------
 PyQt6              GPL v3 (or commercial from Riverbank)   https://www.riverbankcomputing.com/software/pyqt/
-Qt 6               LGPL v3 / GPL v3                        https://www.qt.io/download-open-source
-mpv / libmpv       GPL v2+ (LGPL v2.1+ for some builds)    https://github.com/mpv-player/mpv
-FFmpeg (in libmpv) LGPL v2.1+ / GPL v2+ depending on build https://ffmpeg.org/download.html
+Qt 6               LGPL v3 (used here under the LGPL v3)   https://www.qt.io/download-open-source
+mpv / libmpv       GPL v2 or later (GPL build, see below)  https://github.com/mpv-player/mpv
+FFmpeg (in libmpv) GPL (GPL build, see below)              https://ffmpeg.org/download.html
 python-mpv         GPL v2+ / LGPL v2.1+ (dual)             https://github.com/jaseg/python-mpv
 mutagen            GPL v2 or later                         https://github.com/quodlibet/mutagen
 Python             Python Software Foundation Licence      https://www.python.org
 Nuitka (build)     Apache License 2.0                      https://nuitka.net
 OpenSSL            Apache License 2.0                      https://www.openssl.org
 libffi             MIT                                     https://github.com/libffi/libffi
-Microsoft Visual C++ runtime (msvcp140.dll and similar) is redistributed under
-Microsoft's redistributable licence terms.
 
-SOURCE CODE
------------
+Microsoft Visual C++ runtime (vcruntime140.dll, msvcp140.dll and similar) is
+redistributed under Microsoft's redistributable licence terms. It is a
+system library of Windows, not part of ALMP's own source.
+
+SOURCE CODE OF ALMP
+-------------------
 The complete source code of ALMP for every release is available at
-https://github.com/alexbedca/Alexbed-Light-Media-Player (see the release tag).
+https://github.com/alexbedca/Alexbed-Light-Media-Player (see the release tag),
+including the build scripts and the GitHub Actions workflow.
 
-The libmpv library (runtime\mpv-2.dll) in the release is an unmodified
-third-party Windows build of mpv (a full build that includes FFmpeg),
-obtained from the Windows builds linked on https://mpv.io/installation/.
-ALMP does not change it.
+LIBMPV / FFMPEG (runtime\mpv-2.dll)
+-----------------------------------
+The file runtime\mpv-2.dll is an unmodified third-party Windows build of
+libmpv that includes FFmpeg. It is a GPL build. ALMP does not change it.
 
-Builds made by the GitHub Actions workflow download a pinned build
-(mpv-winbuild release 2026-10-23-1140d3cc29, file
-mpv-dev-x86_64-20261023-git-1140d3cc29.7z) and record its URL and SHA-256 in
-the file release-libmpv.txt inside the zip.
+Builds made by the GitHub Actions workflow download this pinned build and
+check its SHA-256:
+  zhongfly/mpv-winbuild, release 2026-10-23-1140d3cc29,
+  file mpv-dev-x86_64-20261023-git-1140d3cc29.7z
+  https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-10-23-1140d3cc29
+The URL and SHA-256 are also written in BUILD-INFO.txt inside the zip.
 
-Source code for mpv: https://github.com/mpv-player/mpv
-Source code for FFmpeg: https://ffmpeg.org/download.html
-The corresponding source of the exact libmpv build can be requested from the
-build's publisher (see the links above) or from alexbedgh@gmail.com.
+Where the source of this exact build comes from:
+  - Build scripts and the list of libraries and versions it uses:
+    https://github.com/zhongfly/mpv-winbuild
+  - mpv source (the "git-1140d3cc29" part of the file name is the mpv commit):
+    https://github.com/mpv-player/mpv
+  - FFmpeg source: https://ffmpeg.org/download.html
+ALMP does not host a copy of these sources at the moment.
+
+WRITTEN OFFER: for at least three years after you received this copy of ALMP,
+anyone can ask for the complete corresponding source code of the libmpv/FFmpeg
+build shipped in it, by writing to alexbedgh@gmail.com (please give the ALMP
+version). It will be provided for no more than the cost of sending it.
 
 NO WARRANTY
 -----------
