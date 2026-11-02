@@ -1,9 +1,10 @@
 # Builds the ALMP portable zip on GitHub's servers so the build is verifiable
 # (a SignPath Foundation requirement). Run it by hand: Actions > Build ALMP > Run workflow.
 #
-# One-time setup: Settings > Secrets and variables > Actions > Variables, add
-#   LIBMPV_URL     direct link to a libmpv Windows dev archive (.7z or .zip) that contains libmpv-2.dll or mpv-2.dll
-#   LIBMPV_SHA256  the SHA-256 of that archive (pins the exact file; build fails if it differs)
+# libmpv is downloaded from a pinned release and checked against a SHA-256, so every build uses the same file.
+# Default pin: zhongfly/mpv-winbuild release 2026-10-23-1140d3cc29, file mpv-dev-x86_64-20261023-git-1140d3cc29.7z
+# (GPL build, 64-bit). To use a different build, set the repository variables LIBMPV_URL and LIBMPV_SHA256
+# (Settings > Secrets and variables > Actions > Variables); they override the defaults below.
 name: Build ALMP
 
 on:
@@ -22,8 +23,8 @@ jobs:
     runs-on: windows-latest
     env:
       VER: ${{ inputs.version }}
-      LIBMPV_URL: ${{ vars.LIBMPV_URL }}
-      LIBMPV_SHA256: ${{ vars.LIBMPV_SHA256 }}
+      LIBMPV_URL: ${{ vars.LIBMPV_URL || 'https://github.com/zhongfly/mpv-winbuild/releases/download/2026-10-23-1140d3cc29/mpv-dev-x86_64-20261023-git-1140d3cc29.7z' }}
+      LIBMPV_SHA256: ${{ vars.LIBMPV_SHA256 || 'd4fb6d53979bd9e2e7e3f71e15e721a13c6515d9f32b294e46683de6a5ca9fda' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +40,7 @@ jobs:
       - name: Get libmpv (pinned and checksum-verified)
         shell: pwsh
         run: |
-          if (-not $env:LIBMPV_URL -or -not $env:LIBMPV_SHA256) { throw "Set the LIBMPV_URL and LIBMPV_SHA256 repository variables first (see top of this file)." }
+          if (-not $env:LIBMPV_URL -or -not $env:LIBMPV_SHA256) { throw "LIBMPV_URL / LIBMPV_SHA256 are empty." }
           New-Item -ItemType Directory -Force runtime, libmpv_tmp | Out-Null
           $ext = [IO.Path]::GetExtension(($env:LIBMPV_URL -split '\?')[0])
           $archive = "libmpv_tmp\libmpv$ext"
