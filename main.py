@@ -1852,19 +1852,8 @@ class MediaWindow(QMainWindow):
         self._show_cursor()
         self.video.setMouseTracking(True)
         if was_fullscreen:
-            self._is_fullscreen = False
-            self._exit_fullscreen_ui()
-            self.showMaximized()
-            self.activateWindow()
-            self.raise_()
-            self.left_panel.show()
-            self.right_panel.show()
-            self.control_panel_widget.show()
-            self.fullscreen_title_label.hide()
-            QApplication.processEvents()
-            available_width = self.splitter.width()
-            self.splitter.setSizes([int(available_width * 0.75), int(available_width * 0.25)])
-            QApplication.processEvents()
+            # Stay in fullscreen: the dialog is always-on-top, so just keep the controls and cursor visible.
+            self._show_fs_overlays()
         self._dialog_active = True
         dialog = CustomConfirmDialog(
             self, "Delete File",
@@ -1875,20 +1864,8 @@ class MediaWindow(QMainWindow):
         reply = dialog.exec()
         self._dialog_active = False
         if was_fullscreen:
-            self.showFullScreen()
-            self._is_fullscreen = True
-            self._enter_fullscreen_ui()
-            QApplication.processEvents()
-            self._fs_drawer_wanted = False
-            self.left_panel.show()
-            self.right_panel.hide()
-            self.control_panel_widget.hide()
-            self.fullscreen_title_label.hide()
-            self._show_cursor()
             self.hide_timer.start()
-            self.video.setMouseTracking(True)
             self.video.setFocus()
-            QApplication.processEvents()
         if reply != QDialog.DialogCode.Accepted:
             if was_playing and self.player:
                 try:
@@ -1909,7 +1886,13 @@ class MediaWindow(QMainWindow):
             except Exception:
                 pass
                 
-        success = send_to_recycle_bin(path)
+        self.status_label.setText("Deleting...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        QApplication.processEvents()
+        try:
+            success = send_to_recycle_bin(path)
+        finally:
+            QApplication.restoreOverrideCursor()
         if not success:
             self._dialog_active = True
             QMessageBox.critical(self, "Delete Error", f"Could not delete file:\n{path}")
