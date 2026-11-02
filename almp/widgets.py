@@ -107,6 +107,7 @@ class WelcomeScreen(QWidget):
         layout.setSpacing(10)
 
         logo = QLabel()
+        self._logo = logo
         logo.setPixmap(logo_pixmap(120))
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setAccessibleName("ALMP logo")
@@ -150,7 +151,9 @@ class WelcomeScreen(QWidget):
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setWordWrap(True)
         layout.addWidget(hint)
+        self._hint = hint
         version = QLabel(f"Version {__version__}")
+        self._version = version
         version.setObjectName("welcomeHint")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
@@ -159,7 +162,25 @@ class WelcomeScreen(QWidget):
         self.high_contrast = bool(on)
         self.update()
 
+    def _fit_to_height(self):
+        """On a short window (large interface size) drop the extras so the two buttons keep their text:
+        first the logo, then the version line, then the drag-and-drop hint."""
+        extras = [self._logo, self._version, self._hint]
+        for w in extras:
+            w.setVisible(True)
+        lay = self.layout()
+        for w in extras:
+            lay.activate()
+            if lay.totalMinimumSize().height() <= self.height():
+                break
+            w.setVisible(False)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_to_height()
+
     def showEvent(self, event):
+        self._fit_to_height()
         self._timer.start()
         super().showEvent(event)
 
