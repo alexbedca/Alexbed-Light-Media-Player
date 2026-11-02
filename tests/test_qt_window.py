@@ -238,8 +238,8 @@ def test_every_button_has_an_accessible_name(window):
     missing = []
     for kind in (QAbstractButton, QComboBox, QSlider, QLineEdit):
         for w in window.findChildren(kind):
-            if isinstance(w.parent(), QLineEdit):
-                continue                     # Qt's own clear button inside the search box
+            if isinstance(w.parent(), QLineEdit) or not w.isVisibleTo(window):
+                continue                     # Qt's own helper buttons (search clear, table corner)
             name = w.accessibleName() or (w.text() if isinstance(w, QAbstractButton) else "")
             if not name:
                 missing.append(w.objectName() or type(w).__name__)

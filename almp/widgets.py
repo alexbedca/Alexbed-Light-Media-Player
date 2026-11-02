@@ -309,6 +309,7 @@ class PlaylistView(QTableView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._row_update_pending = False
         self.setObjectName("playlistView")
         self.setShowGrid(False)
         self.setCornerButtonEnabled(False)
@@ -346,8 +347,15 @@ class PlaylistView(QTableView):
 
     def changeEvent(self, event):
         super().changeEvent(event)
-        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
-            self.update_row_height()
+        # Never resize the rows in the middle of a style change (Qt is re-polishing every widget
+        # then); do it right after, once.
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange) and not self._row_update_pending:
+            self._row_update_pending = True
+            QTimer.singleShot(0, self._deferred_row_height)
+
+    def _deferred_row_height(self):
+        self._row_update_pending = False
+        self.update_row_height()
 
     def keyPressEvent(self, event):
         key = event.key()
