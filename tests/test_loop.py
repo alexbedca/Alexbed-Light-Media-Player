@@ -5,8 +5,11 @@ import random
 import pytest
 
 import main
-from main import LOOP_OFF, LOOP_ONE, LOOP_ALL, decide_after_track_end as decide
+from almp import settings as almp_settings
+from main import LOOP_ALL, LOOP_OFF, LOOP_ONE
+from main import decide_after_track_end as decide
 
+from conftest import ROOT
 
 # --- cycling ---------------------------------------------------------------
 
@@ -170,7 +173,7 @@ def test_legacy_keys_include_loop_single():
 def test_old_settings_file_loses_loop_single(tmp_path, monkeypatch):
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"volume": 55, "loop_single": True, "shuffle": True}), encoding="utf-8")
-    monkeypatch.setattr(main, "SETTINGS_PATH", path)
+    monkeypatch.setattr(almp_settings, "SETTINGS_PATH", path)
     main.save_settings(main.settings_to_save(main.load_settings(), 55, True, False))
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert "loop_single" not in saved
@@ -183,7 +186,7 @@ def test_settings_to_save_handles_a_broken_file():
 
 
 def test_loop_mode_is_not_read_from_settings():
-    src = (main.__file__ and open(main.__file__, encoding="utf-8").read())
+    src = (ROOT / "almp" / "ui.py").read_text(encoding="utf-8")
     apply_part = src.split("def _apply_settings", 1)[1].split("\n    def ", 1)[0]
     assert "loop" not in apply_part
 

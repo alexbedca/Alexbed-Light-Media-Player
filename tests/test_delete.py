@@ -7,6 +7,7 @@ import types
 import pytest
 
 import main
+from almp import platform_win
 
 
 @pytest.mark.parametrize("path,root", [
@@ -66,8 +67,9 @@ def fake_windows(monkeypatch):
         windll=types.SimpleNamespace(kernel32=types.SimpleNamespace(GetDriveTypeW=GetDriveTypeW),
                                      shell32=types.SimpleNamespace(SHFileOperationW=SHFileOperationW)))
     import ctypes.wintypes as wintypes
-    monkeypatch.setattr(main, "ctypes", fake_ctypes, raising=False)
-    monkeypatch.setattr(main, "wintypes", wintypes, raising=False)
+    # The Windows calls live in almp/platform_win.py (main.py re-exports the functions).
+    monkeypatch.setattr(platform_win, "ctypes", fake_ctypes, raising=False)
+    monkeypatch.setattr(platform_win, "wintypes", wintypes, raising=False)
     monkeypatch.setattr(main.sys, "platform", "win32")
     monkeypatch.setattr(main.os.path, "abspath", lambda p: p)
     return calls, behaviour

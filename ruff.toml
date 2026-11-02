@@ -1,0 +1,24 @@
+# ruff (https://docs.astral.sh/ruff/) settings for ALMP. Run:  ruff check .
+target-version = "py310"
+line-length = 120
+extend-exclude = ["build", "dist", "main.build", "main.dist", "release", "venv", ".venv"]
+
+[lint]
+# E/W: style errors, F: real mistakes (unused names, undefined names), B: likely bugs,
+# BLE: "except Exception" must log or say why (noqa with a reason), S110: no silent try/except/pass,
+# UP: modern syntax, I: import order.
+select = ["E", "W", "F", "B", "BLE", "S110", "UP", "I"]
+ignore = [
+    "E501",     # long lines: readability first, the formatter is not used on this code
+    "B008",     # Qt default arguments such as QModelIndex() are fine
+    "UP031",    # %-formatting in a few PowerShell strings is clearer than f-strings
+]
+
+[lint.per-file-ignores]
+"main.py" = ["F401", "F403", "E402"]       # re-exports for older scripts and tests
+"tests/*" = ["BLE", "S110", "B011"]
+"tools/*" = ["BLE"]
+
+[lint.isort]
+known-first-party = ["almp"]
+known-local-folder = ["conftest"]

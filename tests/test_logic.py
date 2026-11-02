@@ -5,11 +5,11 @@ import sys
 import pytest
 
 import main
+
 from conftest import ROOT
 
 sys.path.insert(0, str(ROOT / "tools"))
 import get_version  # noqa: E402
-
 
 # --- version -------------------------------------------------------------
 
@@ -28,15 +28,16 @@ def test_invalid_versions(text):
     assert get_version.VERSION_RE.fullmatch(text) is None
 
 
-def test_get_version_reads_main_py():
-    assert get_version.read_version(ROOT / "main.py") == main.__version__
+def test_get_version_reads_the_package_version():
+    assert get_version.read_version(ROOT / "almp" / "__init__.py") == main.__version__
+    assert get_version.read_version() == main.__version__
     out = subprocess.run([sys.executable, str(ROOT / "tools" / "get_version.py")],
                          capture_output=True, text=True, check=True).stdout.strip()
     assert out == main.__version__
 
 
 def test_get_version_rejects_bad_value(tmp_path):
-    bad = tmp_path / "main.py"
+    bad = tmp_path / "__init__.py"
     bad.write_text('__version__ = "8.0.1 & echo hacked"\n', encoding="utf-8")
     r = subprocess.run([sys.executable, str(ROOT / "tools" / "get_version.py"), str(bad)],
                        capture_output=True, text=True)

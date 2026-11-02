@@ -12,8 +12,8 @@ def _touch(folder, name):
 
 def test_reads_utf8_with_and_without_bom(tmp_path):
     song = _touch(tmp_path, "Café del Mar.mp3")
-    for data in (f"#EXTM3U\n{song}\n".encode("utf-8"),
-                 codecs.BOM_UTF8 + f"#EXTM3U\n{song}\n".encode("utf-8")):
+    for data in (f"#EXTM3U\n{song}\n".encode(),
+                 codecs.BOM_UTF8 + f"#EXTM3U\n{song}\n".encode()):
         pl = tmp_path / "list.m3u"
         pl.write_bytes(data)
         assert main.read_playlist_file(str(pl)) == [str(song)]
