@@ -3,7 +3,7 @@
 ALMP is free software for people who just want to press play. This roadmap shows where the project is heading.
 Plans can change - open an issue or a discussion if something matters to you.
 
-## v8.1 (in development on `v8.1-dev`) - big playlists, settings, accessibility
+## Done (v8.1.0) - big playlists, settings, accessibility
 - [x] Virtual playlist (one list model, no item per file) and a streaming folder scan: the first track plays at once
 - [x] Search over a prepared index; natural sort ("2" before "10"); Play next; Move up/down; sort by name/folder
 - [x] Settings window (gear): contrast, interface size with "Apply now", video size, remove played (Off for new
@@ -16,10 +16,10 @@ Plans can change - open an issue or a discussion if something matters to you.
 - [x] Sleep timer: end of track, fade-out, +15 min. Optional resume for files of 20+ minutes (off by default)
 - [x] `main.py` split into the `almp/` package; ruff in CI; tests run with real Qt on Linux and Windows
 - [x] Public benchmark (`tools/bench_playlist.py`) with measured numbers in the README
-- [ ] Manual Windows test of the built exe (docs/MANUAL-TEST-v8.1.md), then release from Actions
+- [x] Manual Windows test of the built exe (docs/MANUAL-TEST-v8.1.md) on a PC and an offline PC
 - [ ] winget / Scoop submission (drafts in `packaging/`)
 
-## Done (v8.0.1) - safety and reliability
+## Done (v8.0.1, shipped inside v8.1.0) - safety and reliability
 - [x] Delete warns clearly on drives without a Recycle Bin (USB sticks, memory cards, network drives)
 - [x] Removed the "Remember Playlist" checkbox that did not work; ALMP always starts clean and removes old v7 history files
 - [x] Errors are written to a local log file (`%LOCALAPPDATA%\ALMP\almp.log`) instead of closing ALMP
@@ -44,6 +44,8 @@ Plans can change - open an issue or a discussion if something matters to you.
 - [x] GPL-3.0 licence, third-party notices, honest documentation
 
 ## Next: v8.2 - trust and reach
+- [ ] Settings: make the window show the Windows options without scrolling on small screens (already moved up in 8.1)
+- [ ] Fullscreen start screen: larger buttons for TVs and big screens
 - [ ] Code signing: the free SignPath Foundation application was declined for now (not enough public visibility yet).
       Grow the project's visibility and reapply later, or choose another route (see SIGNING.md)
 - [ ] Build releases only from Actions; attest builds (GitHub artifact attestations)
