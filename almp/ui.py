@@ -201,6 +201,7 @@ class MediaWindow(QMainWindow):
         self._dialog_active = False
         self._is_fullscreen = False
         self._fs_drawer_wanted = False
+        self._fs_key_time = 0.0          # last key pressed in the fullscreen playlist drawer
         self._fs_title_full = ""
         self._fs_title_key = None
         self._pre_fs_maximized = False
@@ -753,9 +754,11 @@ class MediaWindow(QMainWindow):
         if obj is getattr(self, "controls_host", None) and et == QEvent.Type.Resize:
             QTimer.singleShot(0, self._update_bar_mode)
         if playlist is not None and obj is playlist and et == QEvent.Type.KeyPress and self._is_fullscreen:
+            self._fs_key_time = time.monotonic()
             self._on_fs_activity()
         if search is not None and obj is search and et == QEvent.Type.KeyPress:
             if self._is_fullscreen:
+                self._fs_key_time = time.monotonic()
                 self._on_fs_activity()          # typing in the drawer's search box keeps it open
             if event.key() == Qt.Key.Key_Down:
                 self.playlist.setFocus()
@@ -2271,9 +2274,17 @@ class MediaWindow(QMainWindow):
             self._show_cursor()
             self.hide_timer.start()
             return
-        # Do not close the drawer while someone is using it with the keyboard.
+        # With nothing loaded the start screen is all there is: keep the pointer visible so its buttons work.
+        if self.welcome_widget.isVisible():
+            self._show_cursor()
+            self.hide_timer.start()
+            return
+        # Do not close the drawer while someone is using it with the KEYBOARD. A mouse click or a
+        # double-click in the list gives the list the focus too, but that must not keep the drawer open.
         fw = QApplication.focusWidget()
-        if self.right_panel.isVisible() and fw is not None and self.right_panel.isAncestorOf(fw):
+        keyboard_recent = time.monotonic() - self._fs_key_time < 8.0
+        if (self.right_panel.isVisible() and fw is not None and self.right_panel.isAncestorOf(fw)
+                and keyboard_recent):
             self.hide_timer.start()
             return
         if fw is not None and self.control_panel_widget.isAncestorOf(fw) and fw is not self.video:
@@ -2348,7 +2359,8 @@ class MediaWindow(QMainWindow):
             if self.current_path:
                 self._set_fs_title(Path(self.current_path).name)
             self.fullscreen_title_label.hide()
-            self._hide_cursor()
+            if not self.welcome_widget.isVisible():
+                self._hide_cursor()
             self.hide_timer.start()
         self._update_fs_button()
         QTimer.singleShot(0, self._layout_overlay)
