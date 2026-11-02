@@ -6,7 +6,7 @@ and no accounts, ads or tracking.
 
 ![ALMP Preview](images/screenshot-v8-welcome.png)
 
-**Version:** 8.0.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.0.1 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
 and it is not a commercial product.
@@ -22,19 +22,25 @@ and it is not a commercial product.
 - **Sleep timer.** Click the clock button on the control bar, choose 5 minutes to 2 hours, then pick what happens: pause playback, or close ALMP. The clock turns blue while a timer is running.
 - **High-contrast theme** (black, white and yellow) for easier reading. *Add Media > High Contrast Theme*.
 - **Drag and drop.** Drop files or folders on the window to add them to the playlist.
-- **Delete goes to the Recycle Bin**, so a mistake can be undone.
+- **Safe delete.** On your computer's own drives, *Delete* sends the file to the Recycle Bin, so a mistake can be undone.
+  USB sticks, memory cards and network drives have no Recycle Bin: there ALMP warns you clearly that the file will be
+  deleted permanently, and does nothing unless you say yes.
 - **Double-click to play.** Run `Set-ALMP-Defaults.bat` once to register ALMP with Windows, then choose it in *Default apps*.
-- **Single window.** Opening another file while ALMP is running sends it to the same window.
+- **Single window.** Files you open from Explorer while ALMP is running are added to the playlist in the same window,
+  and the first of them starts playing. The playlist is never wiped. Selecting many files and pressing Enter works too.
 - **Shuffle, loop and "remove played".**
 - **Album art** from embedded tags (MP3, FLAC, M4A).
 - **Hardware decoding** when your graphics card supports it (mpv `hwdec=auto`).
-- **Fullscreen controls that float over the video**, hiding after 3 seconds (they stay up while a menu is open).
+- **Fullscreen controls that float over the video**, hiding after 3 seconds (they stay up, with the mouse pointer, while a menu or window is open).
+- **Click anywhere on the progress bar** to jump there.
 - **Audio tracks and subtitles.** The button next to the speed box lists audio tracks, subtitles, loads a subtitle file and takes snapshots (`S`).
 - **Video size modes.** Press `A` to cycle Fit, Fill (crop) and Stretch.
 - **Interface size.** Choose 100% to 200% in the playlist panel (applies the next time you open ALMP).
 - **Remembers your settings** (volume, shuffle, loop, remove played, interface size, high contrast).
 - **Windows media keys** (play/pause, next, previous) work.
 - **Portable and offline.** No installer, no admin rights. ALMP does not connect to the internet.
+- **Error log on your PC only.** If something goes wrong, ALMP keeps running and writes a short report to
+  `%LOCALAPPDATA%\ALMP\almp.log`. It is never sent anywhere; attach it to a bug report if you like.
 
 ## Download and run (Windows)
 
@@ -42,9 +48,15 @@ and it is not a commercial product.
 2. Extract the whole folder (do not run ALMP from inside the zip).
 3. Double-click `ALMP.exe`.
 
-> **Windows SmartScreen:** ALMP is not code-signed yet (see [SIGNING.md](SIGNING.md)), so Windows may show "Windows protected your PC".
-> Click **More info** then **Run anyway**. To check your download, compare its SHA-256 with the value on the release page:
-> `certutil -hashfile ALMP-v8.0.0-Portable.zip SHA256`
+> **ALMP is not code-signed.** Windows SmartScreen may show "Windows protected your PC" the first time.
+> This warning appears for most new free programs that are not signed; it does not mean a virus was found.
+> Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
+>
+> **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
+> open PowerShell and run `Get-FileHash .\ALMP-v8.0.1-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.0.1-Portable.zip SHA256`).
+> The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
+> do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
 ### Make ALMP your default player
 
@@ -53,7 +65,11 @@ and it is not a commercial product.
 3. On the Windows page that opens, press **Set default** (or pick ALMP for `.mp3`, `.mp4`, and so on).
 
 Windows does not allow any program to change your defaults silently, so this last click must be yours.
-To undo it, run `Remove-ALMP-Defaults.bat`.
+
+### Remove ALMP (uninstall)
+
+Run `Remove-ALMP-Defaults.bat`. It removes ALMP from *Open with* and *Default apps*, turns off *Run at Startup*,
+and asks whether to delete ALMP's settings and log files too. Then delete the ALMP folder.
 
 ## Keyboard shortcuts
 
@@ -66,14 +82,17 @@ To undo it, run `Remove-ALMP-Defaults.bat`.
 | Page Up / Page Down | Previous / next track |
 | M | Mute |
 | A | Video size: Fit, Fill, Stretch |
+| S | Save a picture of the video (to Pictures) |
 | P | Show / hide the playlist drawer (fullscreen) |
 | Ctrl+F | Search the playlist |
+| Enter | Play the selected playlist item |
+| Tab | Move between buttons (the selected one gets a yellow outline) |
 | F1 | Show the shortcut help |
 | Double-click video | Fullscreen |
 
 ## Run from source
 
-You need Python 3.10 or newer (official builds use Python 3.13 or 3.14) and the mpv library (`libmpv`).
+You need Python 3.10 or newer (the GitHub Actions build uses Python 3.13) and the mpv library (`libmpv`).
 
 ```bash
 git clone https://github.com/alexbedca/Alexbed-Light-Media-Player.git
@@ -84,15 +103,22 @@ pip install -r requirements.txt
 python main.py
 ```
 
+To run the small logic tests (no window is opened): `pip install pytest` then `python -m pytest tests`.
+
 - **Windows:** put `mpv-2.dll` (a libmpv build) in a folder named `runtime` next to `main.py`.
 - **Linux (experimental, tested on Ubuntu under WSL only):** `sudo apt install libmpv2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xkb1`. ALMP uses X11 on Linux because mpv embeds into the window that way.
 
 ### Build the portable app
 
-`Build-ALMP.bat` runs the same command as below and writes `build.log`; `Package-ALMP.bat` then makes the zip and its SHA-256 file.
+Run `pip install nuitka`, then `Build-ALMP.bat`. It reads the version from `__version__` in `main.py`
+(via `tools/get_version.py`), runs the full Nuitka command (see the file for every option) and writes `build.log`.
+`Package-ALMP.bat` then makes `release\ALMP-vX.Y.Z-Portable.zip` (with `LICENSES\`) and its SHA-256 file.
+The GitHub Actions workflow (`.github/workflows/build.yml`) does the same on GitHub's servers with a pinned,
+checksum-verified libmpv and writes `BUILD-INFO.txt` into the zip.
+
+The core of the command is:
 
 ```bat
-pip install nuitka
 python -m nuitka --standalone --enable-plugin=pyqt6 --windows-console-mode=disable --lto=yes ^
   --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico ^
   --include-data-file=icon.png=icon.png --include-data-file=runtime/mpv-2.dll=runtime/mpv-2.dll ^
@@ -110,13 +136,18 @@ ALMP is free software, released under the **GNU General Public License v3.0 or l
 You may use, study, share and change it. See [LICENSE](LICENSE).
 
 ALMP is built on other free software (PyQt6, Qt, mpv, FFmpeg, mutagen and others).
-Their licences are listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+Their licences are listed in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), and the full licence texts
+are in the [LICENSES](LICENSES) folder (also included in the zip).
 
-## Code signing policy
+## Code signing
 
-ALMP releases are not code-signed yet. We plan to apply to the [SignPath Foundation](https://signpath.org)
-free programme for open-source projects once builds run on GitHub Actions. Until then, verify each download with
-its published SHA-256. ALMP works fully offline and sends no data anywhere. Details: [SIGNING.md](SIGNING.md).
+ALMP releases are currently **not code-signed**. The application for free signing from the
+SignPath Foundation was declined for now, because the project does not yet have enough public visibility.
+Reapplying later, or a paid option, is still open. Until then, please check each download with its published SHA-256
+(see above). Details: [SIGNING.md](SIGNING.md).
+
+**Privacy:** ALMP works fully offline. It does not send any information to other computers or networks.
+Settings and the error log stay on your PC (`%APPDATA%\ALMP` and `%LOCALAPPDATA%\ALMP`).
 
 ## Community & Roadmap
 - See [ROADMAP.md](ROADMAP.md) for what is coming next.

@@ -12,4 +12,5 @@ I will reply as soon as I can and credit you in the release notes if you wish.
 ## Verifying downloads
 Each release lists the SHA-256 checksum of the zip. In PowerShell:
 `Get-FileHash .\ALMP-vX.Y.Z-Portable.zip -Algorithm SHA256`
-ALMP does not connect to the internet.
+ALMP releases are currently not code-signed (see [SIGNING.md](SIGNING.md)), so this checksum is the way to
+confirm a download is genuine. ALMP does not connect to the internet.
