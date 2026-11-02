@@ -165,6 +165,9 @@ def test_search_filter_count_and_enter(window, qapp, tmp_path):
     first = window.model.path_at_view(0)
     window._play_first_visible()
     assert window.player.loaded[-1][0] == first
+    # choosing a track from the search results empties the search box and shows the whole list again
+    assert window.search_edit.text() == ""
+    assert window.model.rowCount() == 60
     window.search_edit.clear()
     window._apply_filter()
     assert window.model.rowCount() == 60

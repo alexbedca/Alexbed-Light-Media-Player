@@ -1743,7 +1743,18 @@ class MediaWindow(QMainWindow):
             src = self.model.source_row(0)
             if src >= 0:
                 self.play_index(src)
+                self._finish_search()
                 self.video.setFocus()
+
+    def _finish_search(self):
+        """After a track was chosen from a search result, empty the search box and show the whole
+        playlist again (scrolled to the track that is playing)."""
+        if self.search_edit.text():
+            self._filter_timer.stop()
+            self.search_edit.blockSignals(True)
+            self.search_edit.clear()
+            self.search_edit.blockSignals(False)
+            self._apply_filter()
 
     def _focus_search(self):
         if self._is_fullscreen:
@@ -2546,6 +2557,7 @@ class MediaWindow(QMainWindow):
                 self.play_index(0)
             return
         self.play_index(src)
+        self._finish_search()
 
     def play_index(self, index, _from_prev=False, start=None):
         if not self.store or not (0 <= index < len(self.store)):
