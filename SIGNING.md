@@ -16,7 +16,7 @@ provides one for free to qualifying open-source projects.
 |---|---|
 | OSI-approved licence for all components, no commercial dual licensing | OK: GPL-3.0-or-later |
 | Source repository owned by the team that signs | OK: github.com/alexbedca/Alexbed-Light-Media-Player |
-| Actively maintained, already released in the form to be signed | OK (v7.2.0 released; v8.0.0 next) |
+| Actively maintained, already released in the form to be signed | OK (v7.2.0 released; v8.0.0 is the first release to sign) |
 | Binaries built from source in a **verifiable** way | TODO: build on GitHub Actions (see `.github/workflows/build.yml`) |
 | Manual approval of every signing request | Will be set up in SignPath |
 | Product name and version set in the .exe and consistent | OK: build command sets them (`--product-name`, `--product-version`) |

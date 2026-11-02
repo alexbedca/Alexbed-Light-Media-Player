@@ -29,10 +29,19 @@ The complete source code of ALMP for every release is available at
 https://github.com/alexbedca/Alexbed-Light-Media-Player (see the release tag).
 
 The libmpv library (runtime\mpv-2.dll) in the release is an unmodified
-third-party Windows build of mpv (a full build that includes FFmpeg).
-Build/version: [FILL IN the exact build name, date and download URL used for
-each release - the CI workflow records this]. Source code for mpv:
-https://github.com/mpv-player/mpv and for FFmpeg: https://ffmpeg.org/download.html
+third-party Windows build of mpv (a full build that includes FFmpeg),
+obtained from the Windows builds linked on https://mpv.io/installation/.
+ALMP does not change it.
+
+Builds made by the GitHub Actions workflow download a pinned build
+(mpv-winbuild release 2026-10-23-1140d3cc29, file
+mpv-dev-x86_64-20261023-git-1140d3cc29.7z) and record its URL and SHA-256 in
+the file release-libmpv.txt inside the zip.
+
+Source code for mpv: https://github.com/mpv-player/mpv
+Source code for FFmpeg: https://ffmpeg.org/download.html
+The corresponding source of the exact libmpv build can be requested from the
+build's publisher (see the links above) or from alexbedgh@gmail.com.
 
 NO WARRANTY
 -----------
