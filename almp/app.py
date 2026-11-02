@@ -49,7 +49,12 @@ def _spawn_restart():
         flags = 0
         if sys.platform == "win32":
             flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        subprocess.Popen(cmd, close_fds=True, creationflags=flags,
+        env = dict(os.environ)
+        if env.pop("ALMP_SET_SCALE_FACTOR", None):
+            # We set QT_SCALE_FACTOR ourselves from the settings; the new process must read the
+            # (possibly changed) setting again instead of inheriting the old size.
+            env.pop("QT_SCALE_FACTOR", None)
+        subprocess.Popen(cmd, close_fds=True, creationflags=flags, env=env,
                          cwd=os.path.dirname(cmd[-1]) or None)
         log.info("Restarting ALMP for the new interface size")
     except OSError:
@@ -92,6 +97,7 @@ def main(argv=None):
         scale = float(settings["ui_scale"])
         if abs(scale - 1.0) > 0.01:
             os.environ["QT_SCALE_FACTOR"] = str(scale)
+            os.environ["ALMP_SET_SCALE_FACTOR"] = "1"
     else:
         try:
             scale = float(os.environ["QT_SCALE_FACTOR"])
