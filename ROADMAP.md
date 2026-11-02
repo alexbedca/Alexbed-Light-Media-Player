@@ -3,6 +3,11 @@
 ALMP is free software for people who just want to press play. This roadmap shows where the project is heading.
 Plans can change - open an issue or a discussion if something matters to you.
 
+## Done (v8.0.0)
+- [x] Delete to the Recycle Bin; clean start (no remembered position)
+- [x] Save playlist as M3U, sleep timer (pause or close), high-contrast theme
+- [x] Lower memory use; tested with a 10,000-file playlist
+
 ## Done (v7.2.0)
 - [x] Modern dark interface, floating fullscreen controls, playlist search
 - [x] Large playlists load in batches (window stays responsive)

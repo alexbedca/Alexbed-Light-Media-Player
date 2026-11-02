@@ -1,7 +1,7 @@
 ====================================================================
                   ALEXBED LIGHT MEDIA PLAYER (ALMP)
 ====================================================================
-Version:       v7.2.0
+Version:       v8.0.0
 Developer:     Alexander Bediako
 Contact:       alexbedgh@gmail.com
 Website:       https://github.com/alexbedca/Alexbed-Light-Media-Player
@@ -62,6 +62,14 @@ To undo this, run "Remove-ALMP-Defaults.bat".
 - Drag and drop files or folders to add them to the playlist.
 - Large playlists load in batches so the window stays responsive.
 - Search box: type to filter the playlist (Ctrl+F).
+- Starts clean: ALMP does not remember the last playlist or position.
+- Save Playlist as M3U: Add Media menu > "Save Playlist as M3U...".
+- Sleep timer: click the clock button on the control bar (or Add Media
+  menu > Sleep Timer). Pick the time, then choose "When time is up":
+  Pause playback, or Close ALMP. The clock turns blue while it runs.
+- Audio tracks and subtitles: the button next to the speed box. In
+  fullscreen the bar stays up while this menu is open.
+- High Contrast Theme: Add Media menu (black, white and yellow).
 - Shuffle, Loop 1, and "Remove played". Shuffle picks a random track
   each time; with "Remove played" off, a track can repeat.
 - Album art from embedded tags (MP3, FLAC, M4A).
@@ -85,6 +93,7 @@ M ................. Mute
 A ................. Video size: Fit, Fill (crop), Stretch
 P ................. Show / hide the playlist drawer (fullscreen)
 Ctrl+F ............ Search the playlist
+F1 ................ Shortcut help
 Double-click video  Fullscreen on / off
 
 --------------------------------------------------------------------
@@ -94,8 +103,8 @@ Double-click video  Fullscreen on / off
   drawer is open (button on the bar, or press P) it appears and hides
   together with the bar after 3 seconds without movement. Leave
   fullscreen with Esc, F, or the button at the right of the bar.
-- "Delete" PERMANENTLY deletes the file from your computer (it does
-  NOT go to the Recycle Bin). "Remove" only takes it off the playlist.
+- "Delete" moves the file to the Recycle Bin, so you can restore it.
+  "Remove" only takes it off the playlist.
 - Run at Startup: tick this box to start ALMP when Windows starts.
   If you move the folder, open ALMP once and it fixes the entry.
 - ALMP does not connect to the internet.

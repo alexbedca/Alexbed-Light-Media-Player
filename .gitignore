@@ -24,3 +24,11 @@ runtime/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Release packages and local scratch
+release/
+_backup/
+*.zip
+*.log
+_testmedia/
+Test-Launch.bat
