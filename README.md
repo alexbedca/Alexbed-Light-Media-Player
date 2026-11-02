@@ -6,11 +6,11 @@ and no accounts, ads or tracking.
 
 ![ALMP Preview](images/screenshot-v8-welcome.png)
 
-![ALMP playing a video, with the quick-access buttons and Loop button](images/screenshot-v8.0.1-playing.png)
+![ALMP 8.1 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.1-playing.png)
 
-*High-contrast theme on, with Loop: All ("Remove played" is switched off automatically):*
+*High-contrast theme on:*
 
-![ALMP with the high-contrast theme and Loop: All](images/screenshot-v8.0.1-high-contrast.png)
+![ALMP 8.1 with the high-contrast theme](images/screenshot-v8.1-high-contrast.png)
 
 **Version:** 8.1.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
