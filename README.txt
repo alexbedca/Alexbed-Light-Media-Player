@@ -1,7 +1,7 @@
 ====================================================================
                   ALEXBED LIGHT MEDIA PLAYER (ALMP)
 ====================================================================
-Version:       v8.1.0
+Version:       v8.2.0
 Developer:     Alexander Bediako
 Contact:       alexbedgh@gmail.com
 Website:       https://github.com/alexbedca/Alexbed-Light-Media-Player
@@ -18,7 +18,7 @@ other software, and it does not need administrator rights.
 
 1. Extract the ZIP file to a folder on your PC (for example in
    Documents). Do not run it from inside the ZIP.
-2. Open the extracted "ALMP-v8.1.0-Portable" folder.
+2. Open the extracted "ALMP-v8.2.0-Portable" folder.
 3. Double-click "ALMP.exe".
 4. Drag and drop a folder (or files) into the window. If the playlist
    is empty, the first file starts playing automatically.
@@ -32,7 +32,7 @@ from https://github.com/alexbedca/Alexbed-Light-Media-Player/releases
 To check that your download is the real one, compare its SHA-256
 checksum with the one on the release page. Open PowerShell in the
 folder with the zip and type:
-    Get-FileHash .\ALMP-v8.1.0-Portable.zip -Algorithm SHA256
+    Get-FileHash .\ALMP-v8.2.0-Portable.zip -Algorithm SHA256
 The long code it prints must be exactly the same as on the release
 page (capital or small letters do not matter). If it is different, do
 not run the file.

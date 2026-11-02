@@ -3,6 +3,12 @@
 ALMP is free software for people who just want to press play. This roadmap shows where the project is heading.
 Plans can change - open an issue or a discussion if something matters to you.
 
+## Done (v8.2.0) - TV-size start screen
+- [x] In fullscreen the start screen (logo, text, Add Files / Add Folder) scales with the screen height, so it is easy
+      to read and click on a TV or big monitor. Setting: *Start screen in fullscreen* = Automatic / Always big / Never
+- [x] Real-PC test with 100,120 files (see README, Performance)
+- [ ] Bigger fullscreen playlist drawer and time/volume text; bold outlined *Add Folder* button for TVs
+
 ## Done (v8.1.0) - big playlists, settings, accessibility
 - [x] Virtual playlist (one list model, no item per file) and a streaming folder scan: the first track plays at once
 - [x] Search over a prepared index; natural sort ("2" before "10"); Play next; Move up/down; sort by name/folder

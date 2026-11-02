@@ -1,14 +1,14 @@
 {
     "##": "DRAFT Scoop manifest for ALMP - NOT submitted. Replace the hash with the real zip's SHA-256 before use. See packaging/README.md.",
-    "version": "8.1.0",
+    "version": "8.2.0",
     "description": "A simple, free, offline media player for Windows with big clear buttons, built on mpv.",
     "homepage": "https://github.com/alexbedca/Alexbed-Light-Media-Player",
     "license": "GPL-3.0-or-later",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.1.0/ALMP-v8.1.0-Portable.zip",
+            "url": "https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.2.0/ALMP-v8.2.0-Portable.zip",
             "hash": "0000000000000000000000000000000000000000000000000000000000000000",
-            "extract_dir": "ALMP-v8.1.0-Portable"
+            "extract_dir": "ALMP-v8.2.0-Portable"
         }
     },
     "bin": "ALMP.exe",

@@ -12,7 +12,7 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.1 with the high-contrast theme](images/screenshot-v8.1-high-contrast.png)
 
-**Version:** 8.1.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
 and it is not a commercial product.
@@ -74,8 +74,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.1.0-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.1.0-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.2.0-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.0-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
@@ -123,7 +123,13 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 Measured with `tools/bench_playlist.py` on GitHub Actions runners (4 virtual CPUs, Qt 6.12 offscreen,
 Python 3.13, mpv replaced by a stand-in, empty generated files), CI run 41499364586 on commit `fe7dfd0`.
 These are server machines, not an old home PC: **run the script on your own PC** (see below) before quoting
-numbers for slower hardware. Not measured yet: a real Windows desktop with the real mpv, USB sticks, network shares.
+numbers for slower hardware.
+
+**Real PC check (v8.1.0 build, Windows 11 desktop, real mpv, 100,120 playable mp3 files in 401 folders on a local drive):**
+the first track was playing less than 1 s after choosing the folder, about 28,000 files were listed after 1 s, all of them
+after about 4 s (timed by screenshots, so only accurate to about a second). The window kept responding while loading;
+searching "song 0999" showed its matches at once, and scrolling or dragging the scrollbar across the whole list was smooth.
+Not measured yet: USB sticks and network shares (the drive's speed limits those), and exact millisecond pauses on a real PC.
 
 | Measured | Linux runner | Windows runner |
 |---|---|---|
