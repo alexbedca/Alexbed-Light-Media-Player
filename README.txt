@@ -64,8 +64,11 @@ To undo this, run "Remove-ALMP-Defaults.bat".
 - Search box: type to filter the playlist (Ctrl+F).
 - Starts clean: ALMP does not remember the last playlist or position.
 - Save Playlist as M3U: Add Media menu > "Save Playlist as M3U...".
-- Sleep timer: Add Media menu > Sleep Timer. Pick the time, then choose
-  "When time is up": Pause playback, or Close ALMP.
+- Sleep timer: click the clock button on the control bar (or Add Media
+  menu > Sleep Timer). Pick the time, then choose "When time is up":
+  Pause playback, or Close ALMP. The clock turns blue while it runs.
+- Audio tracks and subtitles: the button next to the speed box. In
+  fullscreen the bar stays up while this menu is open.
 - High Contrast Theme: Add Media menu (black, white and yellow).
 - Shuffle, Loop 1, and "Remove played". Shuffle picks a random track
   each time; with "Remove played" off, a track can repeat.

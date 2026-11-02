@@ -19,7 +19,7 @@ and it is not a commercial product.
 - **Starts clean.** ALMP does not remember the last playlist or position, so it opens fast and stays light.
 - **Large playlists.** Folders load in batches so the window stays responsive. A search box filters the list as you type (tested with a 10,000-file library).
 - **Save your playlist** as an `.m3u8` file (*Add Media > Save Playlist as M3U*) and load it again later.
-- **Sleep timer.** Choose 5 minutes to 2 hours, then pick what happens: pause playback, or close ALMP.
+- **Sleep timer.** Click the clock button on the control bar, choose 5 minutes to 2 hours, then pick what happens: pause playback, or close ALMP. The clock turns blue while a timer is running.
 - **High-contrast theme** (black, white and yellow) for easier reading. *Add Media > High Contrast Theme*.
 - **Drag and drop.** Drop files or folders on the window to add them to the playlist.
 - **Delete goes to the Recycle Bin**, so a mistake can be undone.
@@ -28,7 +28,8 @@ and it is not a commercial product.
 - **Shuffle, loop and "remove played".**
 - **Album art** from embedded tags (MP3, FLAC, M4A).
 - **Hardware decoding** when your graphics card supports it (mpv `hwdec=auto`).
-- **Fullscreen controls that float over the video**, hiding after 3 seconds.
+- **Fullscreen controls that float over the video**, hiding after 3 seconds (they stay up while a menu is open).
+- **Audio tracks and subtitles.** The button next to the speed box lists audio tracks, subtitles, loads a subtitle file and takes snapshots (`S`).
 - **Video size modes.** Press `A` to cycle Fit, Fill (crop) and Stretch.
 - **Interface size.** Choose 100% to 200% in the playlist panel (applies the next time you open ALMP).
 - **Remembers your settings** (volume, shuffle, loop, remove played, interface size, high contrast).
