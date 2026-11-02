@@ -156,13 +156,15 @@ def test_search_filter_count_and_enter(window, qapp, tmp_path):
     lib = make_library(tmp_path / "lib", 2, 30)
     window.scan_targets([str(lib)])
     assert pump(qapp, lambda: not window._scan_active and len(window.store) == 60)
-    window.search_edit.setText("album 2 track 1")
+    window.search_edit.setText("track 7")             # every word must match (name or folder)
     window._apply_filter()
     shown = window.model.rowCount()
     assert 0 < shown < 60
     assert window.playlist_count_label.text() == f"{shown} of 60"
+    assert all("7" in os.path.basename(window.model.path_at_view(r)) for r in range(shown))
+    first = window.model.path_at_view(0)
     window._play_first_visible()
-    assert "Album 2" in window.player.loaded[-1][0]
+    assert window.player.loaded[-1][0] == first
     window.search_edit.clear()
     window._apply_filter()
     assert window.model.rowCount() == 60

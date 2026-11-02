@@ -48,6 +48,7 @@ jobs:
         run: python -m pytest -q -rs tests
 
       - name: Playlist benchmark (100k and 250k entries, 100k files scanned from disk)
+        if: always()
         run: python tools/bench_playlist.py --sizes 100000,250000 --disk-sizes 100000 --json bench-${{ matrix.os }}.json
 
       - name: Ruff
