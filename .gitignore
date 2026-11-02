@@ -30,3 +30,5 @@ release/
 _backup/
 *.zip
 *.log
+_testmedia/
+Test-Launch.bat
