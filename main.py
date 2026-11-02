@@ -366,6 +366,10 @@ def make_icon(kind, color="#e6e6e6", px=20):
         p.drawRoundedRect(QRectF(3 * u, 5 * u, 18 * u, 14 * u), 3 * u, 3 * u)
         line((6.5, 11), (10.5, 11)); line((13.5, 11), (17.5, 11))
         line((6.5, 15), (12.5, 15)); line((15.5, 15), (17.5, 15))
+    elif kind == "clock":
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QRectF(3.5 * u, 3.5 * u, 17 * u, 17 * u))
+        line((12, 7.5), (12, 12), (15.5, 14))
     elif kind == "settings":
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QRectF(9 * u, 9 * u, 6 * u, 6 * u))
@@ -1163,6 +1167,14 @@ class MediaWindow(QMainWindow):
         self.tracks_button.setToolTip("Audio tracks and subtitles")
         self.tracks_button.clicked.connect(lambda: self.show_context_menu(self.tracks_button.mapToGlobal(QPoint(0, self.tracks_button.height()))))
         controls_layout.addWidget(self.tracks_button)
+
+        self.sleep_button = QPushButton()
+        self.sleep_button.setIcon(make_icon("clock", "#e6e6e6", 18))
+        self.sleep_button.setIconSize(ICON_SZ)
+        self.sleep_button.setFixedSize(42, 38)
+        self.sleep_button.setToolTip("Sleep timer")
+        self.sleep_button.clicked.connect(self.show_sleep_menu)
+        controls_layout.addWidget(self.sleep_button)
         
         controls_layout.addStretch(1)
 
@@ -1345,7 +1357,19 @@ class MediaWindow(QMainWindow):
         menu.addAction("Add Folder...", self.choose_folder)
         menu.addSeparator()
         menu.addAction("Save Playlist as M3U...", self.save_playlist_m3u)
-        sleep_menu = menu.addMenu("Sleep Timer")
+        self._fill_sleep_menu(menu.addMenu("Sleep Timer"))
+        hc = menu.addAction("High Contrast Theme")
+        hc.setCheckable(True)
+        hc.setChecked(bool(load_settings().get("high_contrast", False)))
+        hc.triggered.connect(self.set_high_contrast)
+
+        button = self.sender()
+        if isinstance(button, QPushButton):
+            menu.exec(button.mapToGlobal(QPoint(0, button.height())))
+        else:
+            menu.exec(QCursor.pos())
+
+    def _fill_sleep_menu(self, sleep_menu):
         for label, minutes in (("Off", 0), ("5 minutes", 5), ("15 minutes", 15), ("30 minutes", 30),
                                ("45 minutes", 45), ("1 hour", 60), ("2 hours", 120)):
             act = sleep_menu.addAction(label)
@@ -1358,16 +1382,22 @@ class MediaWindow(QMainWindow):
             act.setCheckable(True)
             act.setChecked(self._sleep_action == action)
             act.triggered.connect(lambda checked=False, a=action: self.set_sleep_action(a))
-        hc = menu.addAction("High Contrast Theme")
-        hc.setCheckable(True)
-        hc.setChecked(bool(load_settings().get("high_contrast", False)))
-        hc.triggered.connect(self.set_high_contrast)
 
-        button = self.sender()
-        if isinstance(button, QPushButton):
-            menu.exec(button.mapToGlobal(QPoint(0, button.height())))
+    def show_sleep_menu(self):
+        self._on_fs_activity() if self._is_fullscreen else None
+        menu = QMenu(self)
+        self._fill_sleep_menu(menu)
+        b = self.sleep_button
+        menu.exec(b.mapToGlobal(QPoint(0, b.height())))
+
+    def _update_sleep_button(self):
+        on = self._sleep_minutes > 0
+        self.sleep_button.setIcon(make_icon("clock", "#19c8e6" if on else "#e6e6e6", 18))
+        if on:
+            what = "close ALMP" if self._sleep_action == "close" else "pause playback"
+            self.sleep_button.setToolTip(f"Sleep timer on: will {what} in {self._sleep_minutes} min")
         else:
-            menu.exec(QCursor.pos())
+            self.sleep_button.setToolTip("Sleep timer")
 
     def save_playlist_m3u(self):
         if not self.files:
@@ -1390,6 +1420,7 @@ class MediaWindow(QMainWindow):
 
     def set_sleep_action(self, action):
         self._sleep_action = action
+        self._update_sleep_button()
         if self._sleep_minutes > 0:
             self.set_sleep_timer(self._sleep_minutes)
         else:
@@ -1406,9 +1437,11 @@ class MediaWindow(QMainWindow):
                 self.status_label.setText(f"Sleep timer set: playback will pause in {minutes} minutes.")
         else:
             self.status_label.setText("Sleep timer is off.")
+        self._update_sleep_button()
 
     def _sleep_timer_fired(self):
         self._sleep_minutes = 0
+        self._update_sleep_button()
         if self._sleep_action == "close":
             self.close()
             return
@@ -2030,6 +2063,10 @@ class MediaWindow(QMainWindow):
 
     def _hide_fullscreen_overlays(self):
         if not self._is_fullscreen or self._is_scrubbing:
+            return
+        if QApplication.activePopupWidget() is not None:
+            self._show_cursor()
+            self.hide_timer.start()
             return
         pos = QCursor.pos()
         for w in (self.control_panel_widget, self.right_panel):
