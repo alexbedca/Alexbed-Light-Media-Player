@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__version__ = "8.0.0"
+__version__ = "8.0.1"
 
 import os
 import sys
@@ -23,9 +23,72 @@ import random
 import subprocess
 import json
 import math
+import ntpath
 import threading
 import time
+import getpass
+import locale
+import logging
+import logging.handlers
+import re
+import traceback
+import urllib.parse
+import urllib.request
 from pathlib import Path
+
+log = logging.getLogger("almp")
+log.addHandler(logging.NullHandler())
+
+def get_log_dir():
+    """Where almp.log goes: %LOCALAPPDATA%\\ALMP on Windows, ~/.cache/ALMP elsewhere."""
+    base = os.getenv("LOCALAPPDATA") or os.getenv("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "ALMP"
+
+def setup_logging():
+    """Errors are written to a small rotating log file (about 1 MB at most), never sent anywhere.
+    The file is only created when there is something to write."""
+    try:
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handler = logging.handlers.RotatingFileHandler(
+            log_dir / "almp.log", maxBytes=512 * 1024, backupCount=1, encoding="utf-8", delay=True)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+        return log_dir / "almp.log"
+    except Exception:
+        return None
+
+_EXCEPTION_NOTIFY = None    # set to a callable(str) once the window exists
+
+def _almp_excepthook(exc_type, exc, tb):
+    """Log any uncaught error instead of letting PyQt abort the whole program."""
+    try:
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc, tb)
+            return
+        log.error("Uncaught error (ALMP %s):\n%s", __version__,
+                  "".join(traceback.format_exception(exc_type, exc, tb)))
+    except Exception:
+        pass
+    try:
+        if _EXCEPTION_NOTIFY is not None:
+            _EXCEPTION_NOTIFY("Something went wrong - ALMP kept running. Details were saved in almp.log.")
+    except Exception:
+        pass
+
+def _almp_thread_excepthook(args):
+    try:
+        log.error("Uncaught error in a background thread:\n%s",
+                  "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback)))
+    except Exception:
+        pass
+
+VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+", re.ASCII)
+
+def is_valid_version(text):
+    """True only for a plain X.Y.Z version (digits and two dots, nothing else)."""
+    return isinstance(text, str) and VERSION_RE.fullmatch(text) is not None
 
 # --- Cross-Platform Import Handling ---
 if sys.platform == "win32":
@@ -107,10 +170,16 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QListWidget, QListWidgetItem, QFileDialog, QLabel,
     QCheckBox, QMessageBox, QSplitter, QSlider, QComboBox, QDialog,
-    QGridLayout, QSizePolicy, QLineEdit, QMenu, QAbstractItemView
+    QGridLayout, QSizePolicy, QLineEdit, QMenu, QAbstractItemView,
+    QStyle, QStyleOptionSlider
 )
 
-import mpv
+try:
+    import mpv
+    MPV_IMPORT_ERROR = None
+except Exception as _mpv_exc:          # mpv-2.dll missing, blocked by antivirus, or wrong build
+    mpv = None
+    MPV_IMPORT_ERROR = _mpv_exc
 
 AUDIO_EXTENSIONS = {
     ".mp3", ".flac", ".wav", ".aac", ".m4a", ".ogg", ".oga", ".opus", ".wma",
@@ -126,29 +195,91 @@ VIDEO_EXTENSIONS = {
 }
 SUPPORTED_EXTENSIONS = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS
 PLAYLIST_EXTENSIONS = {".m3u", ".m3u8", ".pls"}
-IPC_NAME = "ALMP-OpenFile-IPC"
+def make_ipc_name(user=None):
+    """One single-instance channel per Windows user, so two people signed in on the same PC
+    (fast user switching, Remote Desktop) each get their own ALMP window."""
+    if user is None:
+        try:
+            user = getpass.getuser()
+        except Exception:
+            user = ""
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", str(user or "user"))[:64]
+    return f"ALMP-IPC-{safe}"
 
-def read_playlist_file(path):
+IPC_NAME = make_ipc_name()
+
+def connect_with_retry(try_connect, timeout_s=10.0, interval_s=0.25, sleep=time.sleep, clock=time.monotonic):
+    """Call try_connect() until it returns True or timeout_s has passed.
+    Used when a second ALMP starts while the first one is still opening its window."""
+    deadline = clock() + timeout_s
+    while True:
+        try:
+            if try_connect():
+                return True
+        except Exception:
+            log.exception("Single-instance connect attempt failed")
+        if clock() >= deadline:
+            return False
+        sleep(interval_s)
+
+def decode_playlist_bytes(raw, fallback_encoding=None):
+    """Playlists from Windows Media Player, Winamp and older tools are often in the old Windows
+    ("ANSI") code page instead of UTF-8. Try UTF-8 (with or without BOM) first, then fall back."""
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return raw.decode("utf-16", errors="replace")
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    if fallback_encoding is None:
+        fallback_encoding = "mbcs" if sys.platform == "win32" else (locale.getpreferredencoding(False) or "cp1252")
+    for enc in (fallback_encoding, "cp1252"):
+        try:
+            return raw.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("latin-1")
+
+def _playlist_entry_to_path(line, base):
+    if line.lower().startswith("file:"):
+        parsed = urllib.parse.urlparse(line)
+        p = parsed.path
+        if parsed.netloc and parsed.netloc.lower() != "localhost":
+            p = "//" + parsed.netloc + p          # file://server/share/song.mp3
+        return os.path.normpath(urllib.request.url2pathname(p))
+    entry = line if os.path.isabs(line) else os.path.join(base, line)
+    return os.path.normpath(entry)
+
+def read_playlist_file(path, fallback_encoding=None):
     out = []
     base = os.path.dirname(path)
     is_pls = path.lower().endswith(".pls")
     try:
-        with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
+        with open(path, "rb") as f:
+            text = decode_playlist_bytes(f.read(), fallback_encoding)
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if is_pls:
+                if not line.lower().startswith("file"):
                     continue
-                if is_pls:
-                    if not line.lower().startswith("file"):
-                        continue
-                    line = line.split("=", 1)[-1].strip()
-                entry = line if os.path.isabs(line) else os.path.join(base, line)
-                entry = os.path.normpath(entry)
-                if os.path.isfile(entry) and Path(entry).suffix.lower() in SUPPORTED_EXTENSIONS:
-                    out.append(entry)
+                line = line.split("=", 1)[-1].strip()
+            entry = _playlist_entry_to_path(line, base)
+            if os.path.isfile(entry) and Path(entry).suffix.lower() in SUPPORTED_EXTENSIONS:
+                out.append(entry)
     except Exception:
-        pass
+        log.exception("Could not read playlist %s", path)
     return out
+
+def write_playlist_file(path, files):
+    """.m3u8 is UTF-8 by definition. Plain .m3u gets a UTF-8 BOM so other players
+    do not show accented names as garbage."""
+    encoding = "utf-8" if path.lower().endswith(".m3u8") else "utf-8-sig"
+    with open(path, "w", encoding=encoding, newline="\n") as f:
+        f.write("#EXTM3U\n")
+        for item in files:
+            f.write(item + "\n")
 
 HIGH_CONTRAST_QSS = """
     QMainWindow, QDialog, QMessageBox { background-color: #000000; }
@@ -163,6 +294,10 @@ HIGH_CONTRAST_QSS = """
     QLineEdit, QComboBox { background-color: #000000; border: 2px solid #ffffff; color: #ffffff; }
     QMenu { background-color: #000000; border: 2px solid #ffffff; }
     QMenu::item:selected { background-color: #ffff00; color: #000000; }
+    QPushButton:focus, QComboBox:focus, #playButton:focus { border: 3px solid #00ffff; }
+    QCheckBox:focus { color: #00ffff; }
+    QListWidget:focus { border: 3px solid #00ffff; }
+    QSlider::handle:horizontal:focus { background: #00ffff; }
 """
 
 # Only name fonts that really exist on the platform. Listing missing families (for example
@@ -182,9 +317,32 @@ WIN_STARTUP_DIR = Path(os.getenv('APPDATA') or Path.home()) / r"Microsoft\Window
 WIN_SHORTCUT = WIN_STARTUP_DIR / "ALMP.lnk"
 STARTUP_MARKER = Path(os.getenv("APPDATA") or Path.home()) / "ALMP" / "startup_target.txt"
 
-SETTINGS_PATH = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP" / "settings.json"
-RESUME_PATH = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP" / "resume.json"
-LAST_PLAYLIST_PATH = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP" / "last_playlist.json"
+def windows_powershell_path():
+    """Full path to Windows PowerShell in System32, so a file called powershell.exe in the
+    ALMP folder or the current folder can never be run instead."""
+    root = os.environ.get("SystemRoot") or os.environ.get("windir") or r"C:\Windows"
+    return os.path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+
+SETTINGS_DIR = Path(os.getenv("APPDATA") or (Path.home() / ".config")) / "ALMP"
+SETTINGS_PATH = SETTINGS_DIR / "settings.json"
+# Older versions (v7) could save the last playlist and video positions here. ALMP now always
+# starts clean, so these files are removed once at start-up: they only held file history.
+LEGACY_HISTORY_FILES = ("resume.json", "last_playlist.json", "last_playlist.tmp")
+LEGACY_SETTINGS_KEYS = ("remember_playlist",)
+
+def remove_legacy_history_files(folder=None):
+    """Delete only the exact old history files listed above (never anything else). Returns what was removed."""
+    folder = Path(folder) if folder is not None else SETTINGS_DIR
+    removed = []
+    for name in LEGACY_HISTORY_FILES:
+        p = folder / name
+        try:
+            if p.is_file() and not p.is_symlink():
+                p.unlink()
+                removed.append(name)
+        except Exception:
+            log.warning("Could not remove old history file %s", p)
+    return removed
 
 SCALE_CHOICES = [("Normal (100%)", 1.0), ("Large (125%)", 1.25), ("Extra large (150%)", 1.5), ("Huge (200%)", 2.0)]
 
@@ -201,15 +359,11 @@ def save_settings(data):
     except Exception:
         pass
 
-RESUME_ENABLED = False         # start clean every time: no saved video positions
-RESUME_MIN_DURATION = 600     # only long videos / podcasts remember their position
-RESUME_SAVE_EVERY = 15        # seconds between disk writes
-RESUME_MAX_ENTRIES = 300      # oldest entries are dropped
-
-def trim_resume(data, cap=RESUME_MAX_ENTRIES):
-    """Keep the resume file small: drop the oldest entries first."""
-    while len(data) > cap:
-        data.pop(next(iter(data)))
+def sleep_minutes_left(remaining_ms):
+    """Whole minutes left on the sleep timer, rounded up (59 s left shows as 1 min)."""
+    if remaining_ms is None or remaining_ms <= 0:
+        return 0
+    return int(math.ceil(remaining_ms / 60000.0))
 
 def pick_shuffle_index(files, played, current_index, rng=random):
     """Random track that has not been played yet (never the current one).
@@ -233,27 +387,70 @@ def pick_shuffle_index(files, played, current_index, rng=random):
         candidates = [i for i in range(n) if i != current_index]
     return rng.choice(candidates)
 
-def load_resume():
-    if not RESUME_ENABLED:
-        return {}
-    try:
-        return json.loads(RESUME_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+# --- Deleting files safely ---
+# USB sticks, memory cards, CDs and network drives have no Recycle Bin: Windows would delete
+# the file for good. ALMP checks the drive type first and asks plainly before a permanent delete.
+DRIVE_UNKNOWN, DRIVE_NO_ROOT_DIR, DRIVE_REMOVABLE, DRIVE_FIXED, DRIVE_REMOTE, DRIVE_CDROM, DRIVE_RAMDISK = range(7)
 
-def save_resume(data):
-    if not RESUME_ENABLED:
-        return
-    try:
-        RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
-        RESUME_PATH.write_text(json.dumps(data, separators=(",", ":")), encoding="utf-8")
-    except Exception:
-        pass
+FO_DELETE = 3
+FOF_SILENT = 0x0004
+FOF_NOCONFIRMATION = 0x0010
+FOF_ALLOWUNDO = 0x0040
+FOF_WANTNUKEWARNING = 0x4000
 
-def send_to_recycle_bin(file_path):
+DELETE_OK, DELETE_CANCELLED, DELETE_FAILED = "ok", "cancelled", "failed"
+
+def drive_root(path):
+    """'C:\\Music\\a.mp3' -> 'C:\\', '\\\\server\\share\\a.mp3' -> '\\\\server\\share\\'."""
+    drive, _rest = ntpath.splitdrive(path)
+    if not drive:
+        return None
+    return drive.rstrip("\\/") + "\\"
+
+def get_drive_type(path):
+    """Windows drive type of the drive that holds `path` (DRIVE_UNKNOWN when it cannot be told)."""
     if sys.platform != "win32":
-        os.remove(file_path)
-        return True
+        return DRIVE_UNKNOWN
+    root = drive_root(os.path.abspath(path))
+    if root is None:
+        return DRIVE_UNKNOWN
+    if root.startswith("\\\\"):
+        return DRIVE_REMOTE
+    try:
+        return int(ctypes.windll.kernel32.GetDriveTypeW(ctypes.c_wchar_p(root)))
+    except Exception:
+        log.exception("GetDriveTypeW failed for %s", root)
+        return DRIVE_UNKNOWN
+
+def recycle_bin_available(path, platform=None, drive_type_func=None):
+    """True only when Windows can really put this file in the Recycle Bin (a fixed, local drive).
+    Everything else (USB stick, card reader, network, CD, RAM disk, unknown, not Windows) is treated
+    as 'no Recycle Bin' so the user is warned before anything is deleted for good."""
+    platform = sys.platform if platform is None else platform
+    if platform != "win32":
+        return False
+    drive_type_func = drive_type_func or get_drive_type
+    return drive_type_func(path) == DRIVE_FIXED
+
+def recycle_flags(permanent):
+    """SHFileOperation flags. The Recycle Bin route also asks Windows to warn (FOF_WANTNUKEWARNING)
+    if the file would be destroyed instead of recycled, so a wrong guess can never delete silently."""
+    if permanent:
+        return FOF_NOCONFIRMATION | FOF_SILENT
+    return FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_WANTNUKEWARNING
+
+def send_to_recycle_bin(file_path, permanent=False, hwnd=0):
+    """Returns DELETE_OK, DELETE_CANCELLED or DELETE_FAILED. Never falls back to a silent
+    permanent delete: if the Recycle Bin call fails, the file is left alone."""
+    if sys.platform != "win32":
+        if not permanent:
+            return DELETE_FAILED              # no Recycle Bin support here: the caller must ask first
+        try:
+            os.remove(file_path)
+            return DELETE_OK
+        except Exception:
+            log.exception("Could not delete %s", file_path)
+            return DELETE_FAILED
 
     try:
         class SHFILEOPSTRUCTW(ctypes.Structure):
@@ -268,29 +465,23 @@ def send_to_recycle_bin(file_path):
                 ("lpszProgressTitle", wintypes.LPCWSTR),
             ]
 
-        FO_DELETE = 3
-        FOF_ALLOWUNDO = 0x0040
-        FOF_NOCONFIRMATION = 0x0010
-        FOF_SILENT = 0x0004
-
-        file_path_double_null = file_path + "\0\0"
-        
         op = SHFILEOPSTRUCTW()
-        op.hwnd = 0
+        op.hwnd = hwnd or 0
         op.wFunc = FO_DELETE
-        op.pFrom = file_path_double_null
+        op.pFrom = os.path.abspath(file_path) + "\0\0"
         op.pTo = None
-        op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT
-        
+        op.fFlags = recycle_flags(permanent)
+
         result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
-        return result == 0
-    except Exception as e:
-        print(f"Recycle bin error: {e}")
-        try:
-            os.remove(file_path)
-            return True
-        except Exception:
-            return False
+        if op.fAnyOperationsAborted:
+            return DELETE_CANCELLED
+        if result != 0:
+            log.warning("SHFileOperationW returned %s for %s", result, file_path)
+            return DELETE_FAILED
+        return DELETE_OK if not os.path.exists(file_path) else DELETE_FAILED
+    except Exception:
+        log.exception("Recycle Bin call failed for %s", file_path)
+        return DELETE_FAILED
 
 # --- Crisp vector icons ---
 _ICON_CACHE = {}
@@ -598,6 +789,7 @@ class CustomConfirmDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
         lbl = QLabel(message)
+        lbl.setTextFormat(Qt.TextFormat.PlainText)     # file names are shown exactly as they are
         lbl.setWordWrap(True)
         lbl.setMinimumWidth(460)
         lbl.setStyleSheet("font-size: 14px; padding: 10px;")
@@ -627,6 +819,130 @@ class CustomConfirmDialog(QDialog):
             except Exception:
                 pass
 
+class ClickSeekSlider(QSlider):
+    """A slider that jumps to the spot you click (a normal QSlider only moves one step),
+    and then lets you keep dragging."""
+    def mousePressEvent(self, event):
+        try:
+            if event.button() == Qt.MouseButton.LeftButton and self.maximum() > self.minimum():
+                opt = QStyleOptionSlider()
+                self.initStyleOption(opt)
+                style = self.style()
+                handle = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt,
+                                              QStyle.SubControl.SC_SliderHandle, self)
+                pos = event.position().toPoint()
+                if not handle.contains(pos):
+                    groove = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt,
+                                                  QStyle.SubControl.SC_SliderGroove, self)
+                    span = max(1, groove.width() - handle.width())
+                    x = pos.x() - groove.x() - handle.width() // 2
+                    self.setValue(QStyle.sliderValueFromPosition(
+                        self.minimum(), self.maximum(), max(0, min(span, x)), span, opt.upsideDown))
+        except Exception:
+            log.exception("Slider click failed")
+        super().mousePressEvent(event)
+
+
+class SingleInstanceServer(QObject):
+    """Receives files from a second ALMP (for example several files opened from Explorer).
+    It starts listening before the main window is built; files that arrive early are kept
+    until the window is ready."""
+    def __init__(self, name, parent=None):
+        super().__init__(parent)
+        self.name = name
+        self.server = QLocalServer(self)
+        try:
+            self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
+        except Exception:
+            log.exception("Could not restrict the single-instance channel to this user")
+        self._receiver = None
+        self._early = []
+        self.listening = False
+
+    def listen(self):
+        QLocalServer.removeServer(self.name)
+        self.listening = bool(self.server.listen(self.name))
+        if self.listening:
+            self.server.newConnection.connect(self._on_new_connection)
+        else:
+            log.warning("Single-instance channel could not start: %s", self.server.errorString())
+        return self.listening
+
+    def set_receiver(self, receiver):
+        self._receiver = receiver
+        early, self._early = self._early, []
+        for paths in early:
+            receiver(paths)
+
+    def _deliver(self, paths):
+        if self._receiver is None:
+            self._early.append(paths)
+        else:
+            self._receiver(paths)
+
+    def _on_new_connection(self):
+        while self.server.hasPendingConnections():
+            sock = self.server.nextPendingConnection()
+            if sock is None:
+                return
+            self._handle_socket(sock)
+
+    def _handle_socket(self, sock):
+        buf = bytearray()
+        state = {"done": False}
+
+        def read_more():
+            try:
+                buf.extend(bytes(sock.readAll()))
+            except RuntimeError:
+                pass
+
+        def finish():
+            if state["done"]:
+                return
+            state["done"] = True
+            read_more()
+            paths = [x for x in buf.decode("utf-8", "ignore").split("\n") if x.strip()]
+            try:
+                sock.deleteLater()
+            except RuntimeError:
+                pass
+            self._deliver(paths)
+
+        sock.readyRead.connect(read_more)
+        sock.disconnected.connect(finish)
+        if sock.state() != QLocalSocket.LocalSocketState.ConnectedState:
+            QTimer.singleShot(0, finish)
+        QTimer.singleShot(15000, finish)   # never keep a stuck connection open
+
+
+def send_paths_to_running_instance(paths, name=IPC_NAME, timeout_s=10.0):
+    """Client side: hand our files to the ALMP that is already running.
+    Retries for up to `timeout_s` because that ALMP may still be starting up."""
+    payload = "\n".join(paths).encode("utf-8")
+
+    def try_once():
+        sock = QLocalSocket()
+        sock.connectToServer(name)
+        if not sock.waitForConnected(500):
+            sock.abort()
+            return False
+        if payload:
+            sock.write(payload)
+            sock.flush()
+            sock.waitForBytesWritten(3000)
+        sock.disconnectFromServer()
+        if sock.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+            sock.waitForDisconnected(2000)
+        return True          # connected and handed over; do not send twice
+
+    return connect_with_retry(try_once, timeout_s=timeout_s)
+
+
+class StartupResultBridge(QObject):
+    done = pyqtSignal(bool, str)
+
+
 class FolderScanner(QThread):
     files_found = pyqtSignal(list)
     scan_error = pyqtSignal(str)
@@ -639,11 +955,15 @@ class FolderScanner(QThread):
         try:
             found = []
             for target in self.targets:
+                if self.isInterruptionRequested():
+                    return
                 if os.path.isdir(target):
                     for root, dirs, files in os.walk(target):
+                        if self.isInterruptionRequested():
+                            return             # ALMP is closing: stop scanning right away
                         dirs[:] = [
                             d for d in dirs
-                            if not d.startswith("$") and d.lower() not in {"system volume information", "$recycle.bin"}
+                            if not d.startswith("$") and d.lower() != "system volume information"
                         ]
                         for filename in files:
                             ext = Path(filename).suffix.lower()
@@ -655,6 +975,8 @@ class FolderScanner(QThread):
                         found.append(target)
                     elif ext in PLAYLIST_EXTENSIONS:
                         found.extend(read_playlist_file(target))
+            if self.isInterruptionRequested():
+                return
             found.sort(key=lambda path: path.casefold())
             self.files_found.emit(found)
         except Exception as exc:
@@ -681,15 +1003,21 @@ class MediaWindow(QMainWindow):
         self._played_paths = set()
         self._history = []
         self._autoplay_pending = True
-        self._restore_target = None
-        self._validate_paths = False
+        self._ext_play_key = None          # file opened from Explorer that should start playing
+        self._removed_played_count = 0
+        self._modal_depth = 0
         self._error_streak = 0
-        self._last_resume_write = 0.0
         self._sleep_minutes = 0
         self._sleep_action = "pause"
         self._sleep_timer = QTimer(self)
         self._sleep_timer.setSingleShot(True)
         self._sleep_timer.timeout.connect(self._sleep_timer_fired)
+        self._sleep_tip_timer = QTimer(self)      # keeps "x min left" in the tooltip up to date
+        self._sleep_tip_timer.setInterval(20000)
+        self._sleep_tip_timer.timeout.connect(self._update_sleep_button)
+        self._startup_bridge = StartupResultBridge(self)
+        self._startup_bridge.done.connect(self._on_startup_result)
+        self._startup_busy = False
         self._marked_item = None
         self.scanner = None
         self._closing = False
@@ -701,9 +1029,7 @@ class MediaWindow(QMainWindow):
         self._is_fullscreen = False 
         self._end_event_pending = False
         self._ext_queue = []
-        self._last_ext_time = 0.0
         self.ipc_server = None
-        self.resume_data = load_resume()
 
         self.track_timer = QTimer(self)
         self.track_timer.setInterval(250)
@@ -717,36 +1043,57 @@ class MediaWindow(QMainWindow):
         self._setup_shortcuts()
         self._init_player()
         self._apply_settings()
-        
-        restored = False
-        if self.remember_playlist_checkbox.isChecked():
-            restored = self._load_last_playlist()
-        if not restored:
-            self.welcome_widget.show()
-            self.welcome_widget.raise_()
+
+        self.welcome_widget.show()
+        self.welcome_widget.raise_()
         QTimer.singleShot(0, self._sync_video_overlays)
 
         self.installEventFilter(self)
+        self.search_edit.installEventFilter(self)
+        self.playlist.installEventFilter(self)
         QTimer.singleShot(100, self._force_focus)
 
-    def start_ipc_server(self):
-        self.ipc_server = QLocalServer(self)
-        QLocalServer.removeServer(IPC_NAME)
-        if self.ipc_server.listen(IPC_NAME):
-            self.ipc_server.newConnection.connect(self._on_ipc_connection)
-
-    def _on_ipc_connection(self):
-        sock = self.ipc_server.nextPendingConnection()
-        if sock is None:
+    def attach_ipc_server(self, server):
+        """Connect the single-instance channel (already listening) to this window."""
+        self.ipc_server = server
+        if server is None or not server.listening:
+            self.status_label.setText("Note: opening files by double-click may not reach this window until ALMP is restarted.")
             return
-        buf = bytearray()
-        sock.readyRead.connect(lambda: buf.extend(bytes(sock.readAll())))
-        def done():
-            buf.extend(bytes(sock.readAll()))
-            paths = [x for x in buf.decode("utf-8", "ignore").split("\n") if x.strip()]
-            self.open_external(paths)
-            sock.deleteLater()
-        sock.disconnected.connect(done)
+        server.set_receiver(self.open_external)
+
+    class _ModalGuard:
+        def __init__(self, window):
+            self.w = window
+
+        def __enter__(self):
+            w = self.w
+            w._modal_depth += 1
+            w._dialog_active = True
+            w.hide_timer.stop()
+            w._show_cursor()
+            if w._is_fullscreen:
+                w._show_fs_overlays()
+            return self
+
+        def __exit__(self, *exc):
+            w = self.w
+            w._modal_depth = max(0, w._modal_depth - 1)
+            if w._modal_depth == 0:
+                w._dialog_active = False
+                if w._is_fullscreen and not w._closing:
+                    w.hide_timer.start()
+            return False
+
+    def _modal(self):
+        """Use around every dialog: keeps the mouse pointer and fullscreen controls visible."""
+        return MediaWindow._ModalGuard(self)
+
+    def notify_error(self, text):
+        try:
+            if not self._closing:
+                self.status_label.setText(text)
+        except Exception:
+            pass
 
     def open_external(self, paths):
         if not paths:
@@ -762,11 +1109,9 @@ class MediaWindow(QMainWindow):
             QTimer.singleShot(200, self._drain_external)
             return
         paths, self._ext_queue = self._ext_queue, []
-        now = time.monotonic()
-        if now - self._last_ext_time > 3.0:
-            self.clear_playlist()
-        self._last_ext_time = now
-        self.scan_targets(paths)
+        # Files opened from Explorer are ADDED to the playlist (it is never wiped), and the
+        # first of them starts playing, so a double-click always plays what was clicked.
+        self.scan_targets(paths, external=True)
         self._bring_to_front()
 
     def _bring_to_front(self):
@@ -778,8 +1123,8 @@ class MediaWindow(QMainWindow):
     def _setup_shortcuts(self):
         QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.play_or_resume)
         QShortcut(QKeySequence(Qt.Key.Key_F), self, activated=self._toggle_fullscreen)
-        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=lambda: self.player.seek(5, reference="relative") if self.player else None)
-        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=lambda: self.player.seek(-5, reference="relative") if self.player else None)
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self, activated=lambda: self._seek_relative(5))
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self, activated=lambda: self._seek_relative(-5))
         QShortcut(QKeySequence(Qt.Key.Key_Up), self, activated=lambda: self.volume_slider.setValue(self.volume_slider.value() + 5))
         QShortcut(QKeySequence(Qt.Key.Key_Down), self, activated=lambda: self.volume_slider.setValue(self.volume_slider.value() - 5))
         QShortcut(QKeySequence(Qt.Key.Key_PageUp), self, activated=self.previous_track)
@@ -805,22 +1150,34 @@ class MediaWindow(QMainWindow):
             ("Page Up / Page Down", "Previous / next track"), ("M", "Mute"),
             ("A", "Video size: Fit, Fill, Stretch"), ("S", "Save a picture of the video"),
             ("P", "Playlist drawer (fullscreen)"), ("Ctrl+F", "Search the playlist"),
+            ("Enter", "Play the selected playlist item"),
             ("F1", "This help"), ("Double-click video", "Fullscreen"),
         ]
         html = "<table cellpadding='6'>" + "".join(
             f"<tr><td><b>{k}</b></td><td>{v}</td></tr>" for k, v in rows) + "</table>"
-        self._dialog_active = True
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Keyboard shortcuts")
-        lay = QVBoxLayout(dlg)
-        lbl = QLabel(html)
-        lbl.setTextFormat(Qt.TextFormat.RichText)
-        lay.addWidget(lbl)
-        ok = QPushButton("Close")
-        ok.clicked.connect(dlg.accept)
-        lay.addWidget(ok, alignment=Qt.AlignmentFlag.AlignCenter)
-        dlg.exec()
-        self._dialog_active = False
+        with self._modal():
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Keyboard shortcuts")
+            lay = QVBoxLayout(dlg)
+            lbl = QLabel(html)
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            lay.addWidget(lbl)
+            ok = QPushButton("Close")
+            ok.clicked.connect(dlg.accept)
+            lay.addWidget(ok, alignment=Qt.AlignmentFlag.AlignCenter)
+            dlg.exec()
+            dlg.deleteLater()
+
+    def _seek_relative(self, seconds):
+        """Left/Right arrows. mpv refuses to seek when nothing is loaded, so do nothing then."""
+        if not self.player or not self.current_path:
+            return
+        try:
+            if self.player.idle_active:
+                return
+            self.player.seek(seconds, reference="relative")
+        except Exception:
+            log.debug("Seek ignored", exc_info=True)
 
     def _cycle_aspect(self):
         if not self.player:
@@ -908,6 +1265,16 @@ class MediaWindow(QMainWindow):
             if self.isActiveWindow() and not self._dialog_active:
                 self._force_focus()
         
+        if obj is getattr(self, "playlist", None) and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if self.playlist.currentItem() is not None:
+                    self.play_selected_item(self.playlist.currentItem())
+                    return True
+            if self._is_fullscreen:
+                self._on_fs_activity()
+        if obj is getattr(self, "search_edit", None) and event.type() == QEvent.Type.KeyPress and self._is_fullscreen:
+            self._on_fs_activity()          # typing in the drawer's search box keeps it open
+
         if obj == self.video:
             if event.type() == QEvent.Type.MouseButtonDblClick:
                 self._toggle_fullscreen()
@@ -1019,13 +1386,16 @@ class MediaWindow(QMainWindow):
     def load_external_subtitle(self):
         if not self.player or self.player.idle_active:
             return
-        fname, _ = QFileDialog.getOpenFileName(self, "Load Subtitle", "", "Subtitles (*.srt *.ass *.vtt *.ssa)")
+        with self._modal():
+            fname, _ = QFileDialog.getOpenFileName(self, "Load Subtitle", "", "Subtitles (*.srt *.ass *.vtt *.ssa)")
         if fname:
             try:
                 self.player.sub_add(fname)
                 self.status_label.setText(f"Subtitle loaded: {Path(fname).name}")
             except Exception as e:
-                QMessageBox.warning(self, "Subtitle Error", f"Could not load subtitle:\n{e}")
+                log.exception("Could not load subtitle %s", fname)
+                with self._modal():
+                    QMessageBox.warning(self, "Subtitle Error", f"Could not load subtitle:\n{e}")
 
     def take_snapshot(self):
         if not self.player or self.player.idle_active or not self.current_path:
@@ -1079,7 +1449,8 @@ class MediaWindow(QMainWindow):
         self.control_panel_layout.setContentsMargins(12, 8, 12, 10)
         self.control_panel_layout.setSpacing(6)
 
-        self.progress_slider = QSlider(Qt.Orientation.Horizontal)
+        self.progress_slider = ClickSeekSlider(Qt.Orientation.Horizontal)
+        self.progress_slider.setToolTip("Click or drag to jump to a point in the track")
         self.progress_slider.setRange(0, 0)
         self.progress_slider.sliderMoved.connect(self.slider_user_scrubbed)
         self.progress_slider.sliderPressed.connect(self._start_scrubbing)
@@ -1112,7 +1483,7 @@ class MediaWindow(QMainWindow):
         volume_row.setSpacing(8)
         self.volume_label = QLabel()
         self.volume_label.setPixmap(make_icon("volume", "#9aa4a8", 18).pixmap(18, 18))
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider = ClickSeekSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
         self.volume_slider.valueChanged.connect(self.change_volume)
@@ -1284,7 +1655,7 @@ class MediaWindow(QMainWindow):
         self.options_layout_1.addWidget(self.remove_from_list_button)
 
         self.delete_file_button = QPushButton("Delete")
-        self.delete_file_button.setToolTip("Send the selected file to the Recycle Bin")
+        self.delete_file_button.setToolTip("Delete the selected file (to the Recycle Bin when the drive has one)")
         self.delete_file_button.setStyleSheet("color: #ff6b6b; font-weight: bold;")
         self.delete_file_button.clicked.connect(self.delete_selected_file)
         self.options_layout_1.addWidget(self.delete_file_button)
@@ -1309,13 +1680,10 @@ class MediaWindow(QMainWindow):
         self.remove_played_checkbox.setChecked(True)
         self.options_layout_2.addWidget(self.remove_played_checkbox, 1, 0)
 
-        self.remember_playlist_checkbox = QCheckBox("Remember Playlist")
-        self.remember_playlist_checkbox.setToolTip("Load the last playlist when ALMP opens")
-        self.options_layout_2.addWidget(self.remember_playlist_checkbox, 1, 1)
-
         self.startup_checkbox = QCheckBox("Run at Startup")
+        self.startup_checkbox.setToolTip("Start ALMP when you sign in to Windows")
         self.startup_checkbox.toggled.connect(self.toggle_startup)
-        self.options_layout_2.addWidget(self.startup_checkbox, 2, 0)
+        self.options_layout_2.addWidget(self.startup_checkbox, 1, 1)
 
         size_label = QLabel("Interface size")
         size_label.setStyleSheet("color: #9aa4a8; font-size: 13px;")
@@ -1332,7 +1700,7 @@ class MediaWindow(QMainWindow):
         size_row.setContentsMargins(0, 0, 0, 0)
         size_row.addWidget(size_label)
         size_row.addWidget(self.scale_combo, stretch=1)
-        self.options_layout_2.addLayout(size_row, 3, 0, 1, 2)
+        self.options_layout_2.addLayout(size_row, 2, 0, 1, 2)
 
         self.right_layout.addWidget(self.options_widget_2)
 
@@ -1350,6 +1718,12 @@ class MediaWindow(QMainWindow):
         self.fullscreen_title_label.raise_()
 
         self.check_startup_state()
+
+        # Buttons, boxes and sliders take keyboard focus with Tab only (not when clicked),
+        # so the yellow focus ring shows up only for people who use the keyboard.
+        for kind in (QPushButton, QCheckBox, QComboBox, QSlider):
+            for w in self.findChildren(kind):
+                w.setFocusPolicy(Qt.FocusPolicy.TabFocus)
 
     def show_add_media_menu(self):
         menu = QMenu(self)
@@ -1370,6 +1744,11 @@ class MediaWindow(QMainWindow):
             menu.exec(QCursor.pos())
 
     def _fill_sleep_menu(self, sleep_menu):
+        left = self._sleep_minutes_left()
+        if left:
+            info = sleep_menu.addAction(f"Time left: {left} min")
+            info.setEnabled(False)
+            sleep_menu.addSeparator()
         for label, minutes in (("Off", 0), ("5 minutes", 5), ("15 minutes", 15), ("30 minutes", 30),
                                ("45 minutes", 45), ("1 hour", 60), ("2 hours", 120)):
             act = sleep_menu.addAction(label)
@@ -1384,18 +1763,24 @@ class MediaWindow(QMainWindow):
             act.triggered.connect(lambda checked=False, a=action: self.set_sleep_action(a))
 
     def show_sleep_menu(self):
-        self._on_fs_activity() if self._is_fullscreen else None
+        if self._is_fullscreen:
+            self._on_fs_activity()
         menu = QMenu(self)
         self._fill_sleep_menu(menu)
         b = self.sleep_button
         menu.exec(b.mapToGlobal(QPoint(0, b.height())))
+
+    def _sleep_minutes_left(self):
+        if self._sleep_minutes <= 0 or not self._sleep_timer.isActive():
+            return 0
+        return sleep_minutes_left(self._sleep_timer.remainingTime())
 
     def _update_sleep_button(self):
         on = self._sleep_minutes > 0
         self.sleep_button.setIcon(make_icon("clock", "#19c8e6" if on else "#e6e6e6", 18))
         if on:
             what = "close ALMP" if self._sleep_action == "close" else "pause playback"
-            self.sleep_button.setToolTip(f"Sleep timer on: will {what} in {self._sleep_minutes} min")
+            self.sleep_button.setToolTip(f"Sleep timer on: will {what} in {self._sleep_minutes_left()} min")
         else:
             self.sleep_button.setToolTip("Sleep timer")
 
@@ -1403,34 +1788,45 @@ class MediaWindow(QMainWindow):
         if not self.files:
             self.status_label.setText("The playlist is empty - nothing to save.")
             return
+        if getattr(self, "_pending_paths", None):
+            self.status_label.setText("Still adding files - please wait until loading has finished, then save.")
+            return
         start = str(Path.home() / "Music" / "ALMP-playlist.m3u8")
-        path, _ = QFileDialog.getSaveFileName(self, "Save Playlist", start, "Playlist (*.m3u8 *.m3u)")
+        with self._modal():
+            path, _ = QFileDialog.getSaveFileName(self, "Save Playlist", start, "Playlist (*.m3u8 *.m3u)")
         if not path:
             return
         if not path.lower().endswith((".m3u", ".m3u8")):
             path += ".m3u8"
         try:
-            with open(path, "w", encoding="utf-8", newline="\n") as f:
-                f.write("#EXTM3U\n")
-                for item in self.files:
-                    f.write(item + "\n")
-            self.status_label.setText(f"Saved {len(self.files)} items to {os.path.basename(path)}")
+            write_playlist_file(path, self.files)
+            msg = f"Saved {len(self.files):,} items to {os.path.basename(path)}"
+            if self._removed_played_count:
+                msg += " (items already played and removed are not included)"
+            self.status_label.setText(msg)
         except Exception as e:
-            QMessageBox.warning(self, "Save Playlist", f"Could not save the playlist:\n{e}")
+            log.exception("Could not save playlist %s", path)
+            with self._modal():
+                QMessageBox.warning(self, "Save Playlist", f"Could not save the playlist:\n{e}")
 
     def set_sleep_action(self, action):
+        """Only changes WHAT happens; a running countdown keeps its time."""
         self._sleep_action = action
         self._update_sleep_button()
-        if self._sleep_minutes > 0:
-            self.set_sleep_timer(self._sleep_minutes)
+        what = "close." if action == "close" else "pause playback."
+        left = self._sleep_minutes_left()
+        if left:
+            self.status_label.setText(f"Sleep timer: in {left} min ALMP will {what}")
         else:
-            self.status_label.setText("When the sleep timer ends, ALMP will " + ("close." if action == "close" else "pause playback."))
+            self.status_label.setText("When the sleep timer ends, ALMP will " + what)
 
     def set_sleep_timer(self, minutes):
         self._sleep_minutes = minutes
         self._sleep_timer.stop()
+        self._sleep_tip_timer.stop()
         if minutes > 0:
             self._sleep_timer.start(minutes * 60 * 1000)
+            self._sleep_tip_timer.start()
             if self._sleep_action == "close":
                 self.status_label.setText(f"Sleep timer set: ALMP will close in {minutes} minutes.")
             else:
@@ -1441,6 +1837,7 @@ class MediaWindow(QMainWindow):
 
     def _sleep_timer_fired(self):
         self._sleep_minutes = 0
+        self._sleep_tip_timer.stop()
         self._update_sleep_button()
         if self._sleep_action == "close":
             self.close()
@@ -1571,8 +1968,9 @@ class MediaWindow(QMainWindow):
             "shuffle": self.shuffle_checkbox.isChecked(),
             "loop_single": self.loop_single_checkbox.isChecked(),
             "remove_played": self.remove_played_checkbox.isChecked(),
-            "remember_playlist": self.remember_playlist_checkbox.isChecked()
         })
+        for key in LEGACY_SETTINGS_KEYS:
+            data.pop(key, None)
         save_settings(data)
 
     def _apply_settings(self):
@@ -1582,9 +1980,8 @@ class MediaWindow(QMainWindow):
             self.shuffle_checkbox.setChecked(bool(data.get("shuffle", True)))
             self.loop_single_checkbox.setChecked(bool(data.get("loop_single", False)))
             self.remove_played_checkbox.setChecked(bool(data.get("remove_played", True)))
-            self.remember_playlist_checkbox.setChecked(False)   # always start clean; tick it only if you want it this session
         except Exception:
-            pass
+            log.exception("Could not apply saved settings")
 
     def resizeEvent(self, event):
         QTimer.singleShot(0, self._layout_fs_title)
@@ -1631,6 +2028,7 @@ class MediaWindow(QMainWindow):
 
     @staticmethod
     def _write_startup_shortcut(exe_path):
+        """Creates the Startup-folder shortcut. Returns (ok, details). Runs in a worker thread."""
         def q(v):
             return "'" + str(v).replace("'", "''") + "'"
         ps = (
@@ -1639,67 +2037,91 @@ class MediaWindow(QMainWindow):
             % (q(WIN_SHORTCUT), q(exe_path), q(os.path.dirname(exe_path)), q(exe_path))
         )
         WIN_STARTUP_DIR.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                       capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            r = subprocess.run([windows_powershell_path(), "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True, text=True, timeout=60,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+        except Exception as e:
+            return False, f"PowerShell could not run: {e}"
+        if r.returncode != 0 or not WIN_SHORTCUT.exists():
+            return False, f"PowerShell exit code {r.returncode}: {(r.stderr or '').strip()[:500]}"
         try:
             STARTUP_MARKER.parent.mkdir(parents=True, exist_ok=True)
             STARTUP_MARKER.write_text(os.path.normcase(exe_path), encoding="utf-8")
         except Exception:
-            pass
+            log.warning("Could not write %s", STARTUP_MARKER)
+        return True, ""
 
     def _repair_startup_shortcut(self):
+        """If the ALMP folder was moved, point the existing startup shortcut at the new place."""
         try:
             if STARTUP_MARKER.exists() and \
                STARTUP_MARKER.read_text(encoding="utf-8").strip() == os.path.normcase(APP_EXE_PATH):
                 return
             def q(v): return "'" + str(v).replace("'", "''") + "'"
             ps = "(New-Object -ComObject WScript.Shell).CreateShortcut(%s).TargetPath" % q(WIN_SHORTCUT)
-            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                               capture_output=True, text=True,
+            r = subprocess.run([windows_powershell_path(), "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True, text=True, timeout=60,
                                creationflags=subprocess.CREATE_NO_WINDOW)
             target = os.path.normcase(os.path.normpath(r.stdout.strip())) if r.stdout.strip() else ""
             if target != os.path.normcase(APP_EXE_PATH):
-                self._write_startup_shortcut(APP_EXE_PATH)
+                ok, details = self._write_startup_shortcut(APP_EXE_PATH)
+                if not ok:
+                    log.warning("Could not repair the startup shortcut: %s", details)
         except Exception:
-            pass
+            log.exception("Startup shortcut check failed")
+
+    def _set_startup_box(self, checked):
+        self.startup_checkbox.blockSignals(True)
+        self.startup_checkbox.setChecked(checked)
+        self.startup_checkbox.blockSignals(False)
 
     def toggle_startup(self, checked):
-        is_compiled = hasattr(sys, "frozen") or "__compiled__" in globals()
-        if not is_compiled:
-            self.startup_checkbox.blockSignals(True)
-            self.startup_checkbox.setChecked(False)
-            self.startup_checkbox.blockSignals(False)
-            self._dialog_active = True
-            QMessageBox.warning(self, "Notice", "Run at Startup only works in the compiled .exe version.")
-            self._dialog_active = False
+        if not self._is_compiled():
+            self._set_startup_box(False)
+            with self._modal():
+                QMessageBox.warning(self, "Notice", "Run at Startup only works in the compiled .exe version.")
             return
 
         exe_path = APP_EXE_PATH
         if not exe_path or not os.path.isfile(exe_path):
-            self.startup_checkbox.blockSignals(True)
-            self.startup_checkbox.setChecked(False)
-            self.startup_checkbox.blockSignals(False)
-            self._dialog_active = True
-            QMessageBox.warning(self, "Notice", "Could not locate ALMP.exe, so Run at Startup was not changed.")
-            self._dialog_active = False
+            self._set_startup_box(False)
+            with self._modal():
+                QMessageBox.warning(self, "Notice", "Could not locate ALMP.exe, so Run at Startup was not changed.")
             return
-        
+
         if sys.platform == "win32":
-            try:
-                if checked:
+            if checked:
+                if self._startup_busy:
+                    return
+                self._startup_busy = True
+                self.startup_checkbox.setEnabled(False)
+                self.status_label.setText("Adding ALMP to Windows startup...")
+                bridge = self._startup_bridge
+
+                def work():
+                    try:
+                        if WIN_SHORTCUT.exists():
+                            WIN_SHORTCUT.unlink()
+                        ok, details = MediaWindow._write_startup_shortcut(exe_path)
+                    except Exception as e:
+                        ok, details = False, str(e)
+                    try:
+                        bridge.done.emit(ok, details)
+                    except RuntimeError:
+                        pass          # the window was closed meanwhile
+
+                threading.Thread(target=work, daemon=True).start()
+            else:
+                try:
                     if WIN_SHORTCUT.exists():
                         WIN_SHORTCUT.unlink()
-                    self._write_startup_shortcut(exe_path)
-                    self.status_label.setText("App set to run at Windows startup.")
-                else:
-                    if WIN_SHORTCUT.exists():
-                        WIN_SHORTCUT.unlink()
-                    self.status_label.setText("App removed from Windows startup.")
-            except Exception as e:
-                self._dialog_active = True
-                QMessageBox.critical(self, "Startup Error", f"Failed to modify startup settings: {e}")
-                self._dialog_active = False
-                self.startup_checkbox.setChecked(not checked)
+                    self.status_label.setText("ALMP removed from Windows startup.")
+                except Exception as e:
+                    log.exception("Could not remove the startup shortcut")
+                    self._set_startup_box(True)
+                    with self._modal():
+                        QMessageBox.critical(self, "Startup Error", f"Could not remove ALMP from Windows startup:\n{e}")
         else:
             try:
                 if checked:
@@ -1716,8 +2138,28 @@ class MediaWindow(QMainWindow):
                         LINUX_DESKTOP_FILE.unlink()
                     self.status_label.setText("App removed from Linux startup.")
             except Exception as e:
-                QMessageBox.critical(self, "Autostart Error", f"Failed to modify startup settings: {e}")
-                self.startup_checkbox.setChecked(not checked)
+                log.exception("Autostart change failed")
+                self._set_startup_box(not checked)
+                with self._modal():
+                    QMessageBox.critical(self, "Autostart Error", f"Failed to modify startup settings: {e}")
+
+    def _on_startup_result(self, ok, details):
+        self._startup_busy = False
+        self.startup_checkbox.setEnabled(True)
+        if ok:
+            self._set_startup_box(True)
+            self.status_label.setText("ALMP will now start when you sign in to Windows.")
+            return
+        log.warning("Run at Startup failed: %s", details)
+        self._set_startup_box(False)
+        self.status_label.setText("Run at Startup could not be turned on.")
+        if not self._closing:
+            with self._modal():
+                QMessageBox.warning(
+                    self, "Run at Startup",
+                    "Windows did not allow ALMP to add itself to startup, so nothing was changed.\n\n"
+                    "This can happen on school or office computers. "
+                    "Details were saved in almp.log.")
 
     def _load_album_art(self, file_path):
         try:
@@ -1726,8 +2168,19 @@ class MediaWindow(QMainWindow):
             if audio is None:
                 return None
             art_data = None
-            if hasattr(audio, 'tags') and 'APIC:' in audio.tags:
-                art_data = audio.tags['APIC:'].data
+            tags = getattr(audio, "tags", None)
+            pics = []
+            try:
+                from mutagen.id3 import ID3
+                if isinstance(tags, ID3):
+                    pics = tags.getall("APIC")     # covers saved as "APIC:Cover", "APIC:Front" and so on
+            except Exception:
+                pics = []
+            if pics:
+                front = [p for p in pics if getattr(p, "type", None) == 3]
+                art_data = (front or pics)[0].data
+            elif tags is not None and 'APIC:' in tags:
+                art_data = tags['APIC:'].data
             elif hasattr(audio, 'pictures') and len(audio.pictures) > 0:
                 art_data = audio.pictures[0].data
             elif hasattr(audio, 'tags') and 'covr' in audio.tags:
@@ -1743,15 +2196,24 @@ class MediaWindow(QMainWindow):
     def change_volume(self):
         self.volume_value_label.setText(f"{self.volume_slider.value()}%")
         if self.player:
-            self.player.volume = self.volume_slider.value()
+            try:
+                self.player.volume = self.volume_slider.value()
+            except Exception:
+                log.exception("Could not set the volume")
 
     def change_speed(self, text):
         if self.player:
-            speed = float(text.replace("x", ""))
-            self.player.speed = speed
+            try:
+                self.player.speed = float(text.replace("x", ""))
+            except Exception:
+                log.exception("Could not set the speed to %r", text)
 
     def clear_playlist(self):
         self._pending_paths = []
+        self._chunk_running = False      # a pending chunk tick will simply find nothing to add
+        self._autoplay_pending = True
+        self._ext_play_key = None
+        self._removed_played_count = 0
         self.track_timer.stop()
         self.files.clear()
         self.path_set.clear()
@@ -1778,9 +2240,8 @@ class MediaWindow(QMainWindow):
     def remove_from_playlist(self):
         item = self.playlist.currentItem()
         if item is None:
-            self._dialog_active = True
-            QMessageBox.warning(self, "Remove from List", "Please select a file to remove.")
-            self._dialog_active = False
+            with self._modal():
+                QMessageBox.warning(self, "Remove from List", "Please select a file to remove.")
             return
         path = item.data(Qt.ItemDataRole.UserRole)
         name_key = os.path.normcase(path)
@@ -1828,12 +2289,26 @@ class MediaWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _wait_until_idle(self, timeout_s=1.0):
+        """After stop(), mpv closes the file a moment later. Wait (briefly) so Windows does not
+        refuse the delete with "file in use"."""
+        if not self.player:
+            return
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            try:
+                if self.player.idle_active:
+                    return
+            except Exception:
+                return
+            QApplication.processEvents()
+            time.sleep(0.05)
+
     def delete_selected_file(self):
         item = self.playlist.currentItem()
         if item is None:
-            self._dialog_active = True
-            QMessageBox.warning(self, "Delete File", "Please select a file in the playlist to delete.")
-            self._dialog_active = False
+            with self._modal():
+                QMessageBox.warning(self, "Delete File", "Please select a file in the playlist to delete.")
             return
         path = item.data(Qt.ItemDataRole.UserRole)
         if not path or not os.path.exists(path):
@@ -1843,28 +2318,33 @@ class MediaWindow(QMainWindow):
         was_playing = False
         if self.player:
             try:
-                was_playing = not bool(self.player.pause)
+                was_playing = not bool(self.player.pause) and not self.player.idle_active
                 if was_playing:
                     self._set_mpv_pause(True)
             except Exception:
-                pass
-        self.hide_timer.stop()
-        self._show_cursor()
+                log.exception("Could not pause before delete")
         self.video.setMouseTracking(True)
+
+        has_bin = recycle_bin_available(path)
+        name = Path(path).name
+        if has_bin:
+            title = "Delete File"
+            message = f"Send this file to the Recycle Bin?\n\n{name}\n\nYou can restore it from the Recycle Bin later."
+        else:
+            title = "Delete File Permanently?"
+            message = (
+                "This drive has no Recycle Bin (for example a USB stick, memory card or network drive).\n\n"
+                f"The file will be deleted PERMANENTLY and cannot be restored:\n\n{name}\n\n"
+                "Delete it anyway?"
+            )
+        with self._modal():
+            # Stay in fullscreen: the dialog is always-on-top, and the controls and cursor stay visible.
+            dialog = CustomConfirmDialog(self, title, message)
+            dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+            dialog.setModal(True)
+            reply = dialog.exec()
+            dialog.deleteLater()
         if was_fullscreen:
-            # Stay in fullscreen: the dialog is always-on-top, so just keep the controls and cursor visible.
-            self._show_fs_overlays()
-        self._dialog_active = True
-        dialog = CustomConfirmDialog(
-            self, "Delete File",
-            f"Are you sure you want to send this file to the Recycle Bin?\n\n{Path(path).name}"
-        )
-        dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
-        dialog.setModal(True)
-        reply = dialog.exec()
-        self._dialog_active = False
-        if was_fullscreen:
-            self.hide_timer.start()
             self.video.setFocus()
         if reply != QDialog.DialogCode.Accepted:
             if was_playing and self.player:
@@ -1872,7 +2352,7 @@ class MediaWindow(QMainWindow):
                     self._set_mpv_pause(False)
                     self._set_play_ui(True)
                 except Exception:
-                    pass
+                    log.exception("Could not resume after cancelled delete")
             return
         try:
             idx = self.files.index(path)
@@ -1880,26 +2360,47 @@ class MediaWindow(QMainWindow):
             self.status_label.setText("The selected file is no longer in the playlist.")
             return
         is_currently_playing = (path == self.current_path)
+        resume_at = None
         if is_currently_playing and self.player:
             try:
+                resume_at = self.player.time_pos
                 self.player.stop()
             except Exception:
-                pass
-                
+                log.exception("Could not stop playback before delete")
+            self._wait_until_idle()
+
         self.status_label.setText("Deleting...")
+        hwnd = 0
+        try:
+            hwnd = int(self.winId())
+        except Exception:
+            pass
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         QApplication.processEvents()
         try:
-            success = send_to_recycle_bin(path)
+            result = send_to_recycle_bin(path, permanent=not has_bin, hwnd=hwnd)
         finally:
             QApplication.restoreOverrideCursor()
-        if not success:
-            self._dialog_active = True
-            QMessageBox.critical(self, "Delete Error", f"Could not delete file:\n{path}")
-            self._dialog_active = False
-            if was_playing and not is_currently_playing and self.player:
-                self.player.pause = False
-                self._set_play_ui(True)
+        if result != DELETE_OK:
+            if result == DELETE_CANCELLED:
+                self.status_label.setText(f"Not deleted: {name}")
+            else:
+                self.status_label.setText(f"Could not delete: {name}")
+                with self._modal():
+                    QMessageBox.critical(self, "Delete Error",
+                                         f"Could not delete this file. It was not changed:\n{path}")
+            if is_currently_playing:
+                if was_playing or resume_at:
+                    self.play_index(idx, start=resume_at)        # carry on where it was
+                    if not was_playing:
+                        self._set_mpv_pause(True)
+                        self._set_play_ui(False)
+            elif was_playing and self.player:
+                try:
+                    self._set_mpv_pause(False)
+                    self._set_play_ui(True)
+                except Exception:
+                    log.exception("Could not resume after failed delete")
             return
 
         name_key = os.path.normcase(path)
@@ -1907,7 +2408,10 @@ class MediaWindow(QMainWindow):
         self.files.pop(idx)
         self.playlist.takeItem(idx)
         self._update_playlist_count()
-        self.status_label.setText(f"File sent to Recycle Bin: {Path(path).name}")
+        if has_bin:
+            self.status_label.setText(f"File sent to Recycle Bin: {name}")
+        else:
+            self.status_label.setText(f"File deleted permanently: {name}")
         if is_currently_playing:
             self.current_index = -1
             self.current_path = None
@@ -1933,10 +2437,10 @@ class MediaWindow(QMainWindow):
                 self.current_index -= 1
             if was_playing and self.player:
                 try:
-                    self.player.pause = False
+                    self._set_mpv_pause(False)
                     self._set_play_ui(True)
                 except Exception:
-                    pass
+                    log.exception("Could not resume after delete")
 
     def _poll_player_metrics(self):
         if not self.player or self._closing:
@@ -1954,7 +2458,6 @@ class MediaWindow(QMainWindow):
                 self.time_label.setText(f"{self._fmt_time(current_time)} / {self._fmt_time(duration)}")
                 if current_time > 0:
                     self._error_streak = 0
-                self._remember_position(current_time, duration)
         except Exception:
             pass
 
@@ -1966,8 +2469,14 @@ class MediaWindow(QMainWindow):
         return f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
 
     def slider_user_scrubbed(self):
-        if self.player:
+        if not self.player or not self.current_path:
+            return
+        try:
+            if self.player.idle_active:
+                return
             self.player.seek(self.progress_slider.value(), reference="absolute")
+        except Exception:
+            log.debug("Seek ignored", exc_info=True)
 
     def _start_scrubbing(self):
         self._is_scrubbing = True
@@ -2047,8 +2556,14 @@ class MediaWindow(QMainWindow):
     def _hide_fullscreen_overlays(self):
         if not self._is_fullscreen or self._is_scrubbing:
             return
-        if QApplication.activePopupWidget() is not None:
+        # Never hide the pointer while a menu or any dialog is open (F1 help, file pickers, messages).
+        if (QApplication.activePopupWidget() is not None or self._dialog_active
+                or QApplication.activeModalWidget() is not None):
             self._show_cursor()
+            self.hide_timer.start()
+            return
+        # Do not close the drawer while someone is typing in its search box.
+        if self.right_panel.isVisible() and self.search_edit.hasFocus():
             self.hide_timer.start()
             return
         pos = QCursor.pos()
@@ -2134,44 +2649,68 @@ class MediaWindow(QMainWindow):
             self.scan_targets(paths)
 
     def choose_files(self):
-        files, _ = QFileDialog.getOpenFileNames(
-            self, 
-            "Select Media Files", 
-            "", 
-            "Media Files (" + " ".join("*" + e for e in sorted(SUPPORTED_EXTENSIONS | PLAYLIST_EXTENSIONS)) + ");;"
-            "Audio (" + " ".join("*" + e for e in sorted(AUDIO_EXTENSIONS)) + ");;"
-            "Video (" + " ".join("*" + e for e in sorted(VIDEO_EXTENSIONS)) + ");;All Files (*)"
-        )
+        with self._modal():
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                "Select Media Files",
+                "",
+                "Media Files (" + " ".join("*" + e for e in sorted(SUPPORTED_EXTENSIONS | PLAYLIST_EXTENSIONS)) + ");;"
+                "Audio (" + " ".join("*" + e for e in sorted(AUDIO_EXTENSIONS)) + ");;"
+                "Video (" + " ".join("*" + e for e in sorted(VIDEO_EXTENSIONS)) + ");;All Files (*)"
+            )
         if files:
             self.scan_targets(files)
 
     def choose_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select media folder")
+        with self._modal():
+            folder = QFileDialog.getExistingDirectory(self, "Select media folder")
         if folder:
             self.scan_targets([folder])
 
-    def scan_targets(self, targets):
+    def scan_targets(self, targets, external=False):
         if self.scanner is not None and self.scanner.isRunning():
             self.status_label.setText("Still loading the previous folder - please wait a moment.")
             return
         self.status_label.setText("Processing imported tracks...")
         self.add_media_button.setEnabled(False)
         self.scanner = FolderScanner(targets)
-        self.scanner.files_found.connect(self._on_files_found)
+        self.scanner.files_found.connect(lambda paths, ext=external: self._on_files_found(paths, ext))
         self.scanner.scan_error.connect(self._on_scan_error)
         self.scanner.finished.connect(lambda: self.add_media_button.setEnabled(True))
         self.scanner.start()
 
-    def _on_files_found(self, paths):
-        if not paths:
+    def _on_files_found(self, paths, external=False):
+        if self._closing:
             return
+        if not paths:
+            if not self.files:
+                self.status_label.setText("No playable files were found there.")
+            else:
+                self.status_label.setText("No new playable files were found there.")
+            return
+        if external:
+            # Play the first opened file once it is in the list (or right away if it already was).
+            self._ext_play_key = os.path.normcase(paths[0])
         self._pending_paths = list(getattr(self, "_pending_paths", [])) + list(paths)
         if not getattr(self, "_chunk_running", False):
             self._chunk_running = True
             QTimer.singleShot(0, self._add_next_chunk)
 
+    def _play_external_if_ready(self):
+        key = self._ext_play_key
+        if key is None or key not in self.path_set:
+            return False
+        self._ext_play_key = None
+        for i, p in enumerate(self.files):
+            if os.path.normcase(p) == key:
+                self.play_index(i)
+                return True
+        return False
+
     def _add_next_chunk(self):
         """Adds up to 1,500 files per tick so the window never freezes, even with 100,000+ files."""
+        if self._closing:
+            return
         pending = getattr(self, "_pending_paths", [])
         if not pending:
             self._chunk_running = False
@@ -2186,8 +2725,6 @@ class MediaWindow(QMainWindow):
             key = os.path.normcase(path)            # same file twice = skipped; same NAME in another folder = kept
             if key in self.path_set:
                 continue
-            if self._validate_paths and not os.path.exists(path):
-                continue
             self.path_set.add(key)
             self.files.append(path)
             name = Path(path).name
@@ -2199,7 +2736,9 @@ class MediaWindow(QMainWindow):
         self.playlist.setUpdatesEnabled(True)
         self._update_playlist_count()
 
-        if was_empty and self.files and self._autoplay_pending:
+        if self._play_external_if_ready():
+            self._autoplay_pending = False
+        elif was_empty and self.files and self._autoplay_pending:
             self._autoplay_pending = False
             self.play_index(0)
 
@@ -2211,32 +2750,23 @@ class MediaWindow(QMainWindow):
             self._finish_loading()
 
     def _finish_loading(self):
-        target = self._restore_target
-        self._restore_target = None
-        self._validate_paths = False
         self._autoplay_pending = True
+        self._ext_play_key = None
         if not self.files:
             self.status_label.setText("Nothing to play yet. Add files or a folder.")
             self.welcome_widget.show()
             self.welcome_widget.raise_()
             return
-        if target and target in self.files and not self.current_path:
-            idx = self.files.index(target)
-            self.current_index = idx
-            self.current_path = target
-            self.playlist.setCurrentRow(idx)
-            self._mark_playing(idx)
-            self.status_label.setText(f"Playlist restored ({len(self.files):,} items). Press Play to continue.")
-        elif self.current_path:
+        if self.current_path:
             self.status_label.setText(f"Playing: {Path(self.current_path).name}")
         else:
             self.status_label.setText(f"Added media. Total: {len(self.files):,} item(s).")
 
     def _on_scan_error(self, message):
+        log.error("Import failed: %s", message)
         self.status_label.setText("Import operation failed.")
-        self._dialog_active = True
-        QMessageBox.critical(self, "Import error", message)
-        self._dialog_active = False
+        with self._modal():
+            QMessageBox.critical(self, "Import error", message)
 
     def set_shuffle(self, enabled):
         self.shuffle_enabled = enabled
@@ -2278,35 +2808,11 @@ class MediaWindow(QMainWindow):
             item.setForeground(QColor("#19c8e6"))
             self._marked_item = item
 
-    def _remember_position(self, pos=None, dur=None, force=False):
-        """Remember where a long video was stopped (throttled; the file stays small)."""
-        if not RESUME_ENABLED or not self.player or not self.current_path:
-            return
-        now = time.monotonic()
-        if not force and now - self._last_resume_write < RESUME_SAVE_EVERY:
-            return
-        try:
-            if pos is None:
-                pos = getattr(self.player, "time_pos", None)
-            if dur is None:
-                dur = getattr(self.player, "duration", None)
-        except Exception:
-            return
-        if not pos or not dur or dur < RESUME_MIN_DURATION:
-            return
-        self.resume_data.pop(self.current_path, None)
-        if 15 < pos < dur - 30:
-            self.resume_data[self.current_path] = int(pos)
-        trim_resume(self.resume_data)
-        self._last_resume_write = now
-        save_resume(self.resume_data)
-
-    def play_index(self, index, _from_prev=False):
+    def play_index(self, index, _from_prev=False, start=None):
         if not self.files or not (0 <= index < len(self.files)):
             return
 
         path = self.files[index]
-        self._remember_position(force=True)          # save the spot in the file we are leaving
         if self.shuffle_enabled and not _from_prev and self.current_path and self.current_path != path:
             self._history.append(self.current_path)
             if len(self._history) > 500:
@@ -2346,11 +2852,16 @@ class MediaWindow(QMainWindow):
         if self.player:
             self.speed_combo.setCurrentText("1.0x")
             options = {}
-            resume_time = self.resume_data.get(path, 0)
-            if isinstance(resume_time, (int, float)) and resume_time > 15:
-                options["start"] = str(int(resume_time))     # start there directly, no timer / seek race
-            self.player.loadfile(path, mode="replace", **options)
-            self.player.pause = False
+            if isinstance(start, (int, float)) and start > 1:
+                options["start"] = str(int(start))     # only used to carry on after a failed delete
+            try:
+                self.player.loadfile(path, mode="replace", **options)
+                self.player.pause = False
+            except Exception:
+                log.exception("Could not start %s", path)
+                self.status_label.setText(f"Could not play: {Path(path).name}")
+                self._set_play_ui(False)
+                return
             self.status_label.setText(f"Playing: {Path(path).name}")
             self._set_play_ui(True)
             self.track_timer.start()
@@ -2359,11 +2870,14 @@ class MediaWindow(QMainWindow):
         if not self.player or not self.files:
             return
 
-        if self.player.idle_active:
-            self.play_index(self.current_index if self.current_index >= 0 else 0)
-        else:
-            self.player.pause = not self.player.pause
-            self._set_play_ui(not self.player.pause)
+        try:
+            if self.player.idle_active:
+                self.play_index(self.current_index if self.current_index >= 0 else 0)
+            else:
+                self.player.pause = not self.player.pause
+                self._set_play_ui(not self.player.pause)
+        except Exception:
+            log.exception("Play/pause failed")
 
     def previous_track(self):
         if not self.files:
@@ -2422,10 +2936,6 @@ class MediaWindow(QMainWindow):
             self.play_index(self.current_index)
             return
 
-        if self.current_path in self.resume_data:
-            self.resume_data.pop(self.current_path, None)
-            save_resume(self.resume_data)
-
         if self.remove_played_checkbox.isChecked():
             self._remove_current_and_advance()
         else:
@@ -2441,6 +2951,7 @@ class MediaWindow(QMainWindow):
         self.path_set.discard(name_key)
         self.files.pop(idx_to_remove)
         self.playlist.takeItem(idx_to_remove)
+        self._removed_played_count += 1
         self._update_playlist_count()
 
         if not self.files:
@@ -2467,66 +2978,41 @@ class MediaWindow(QMainWindow):
                 idx_to_remove = 0
             self.play_index(idx_to_remove)
 
-    def _save_last_playlist(self):
-        try:
-            if self.remember_playlist_checkbox.isChecked() and self.files:
-                LAST_PLAYLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-                tmp = LAST_PLAYLIST_PATH.with_suffix(".tmp")
-                tmp.write_text(json.dumps({"files": self.files, "current": self.current_path},
-                                          separators=(",", ":")), encoding="utf-8")
-                os.replace(tmp, LAST_PLAYLIST_PATH)
-            elif LAST_PLAYLIST_PATH.exists():
-                LAST_PLAYLIST_PATH.unlink()
-        except Exception:
-            pass
-
-    def _load_last_playlist(self):
-        """Returns True when a saved playlist is being restored. It never starts playing by itself."""
-        try:
-            if not LAST_PLAYLIST_PATH.exists():
-                return False
-            data = json.loads(LAST_PLAYLIST_PATH.read_text(encoding="utf-8"))
-            current = None
-            if isinstance(data, dict):
-                paths, current = data.get("files", []), data.get("current")
-            else:
-                paths = data
-            paths = [p for p in paths if isinstance(p, str)] if isinstance(paths, list) else []
-            if not paths:
-                return False
-            self._autoplay_pending = False
-            self._validate_paths = True
-            self._restore_target = current if current in paths else None
-            self._on_files_found(paths)
-            return True
-        except Exception:
-            return False
-
     def closeEvent(self, event):
         try:
-            self._remember_position(force=True)
-        except Exception:
-            pass
-        try:
             self._save_settings()
-            self._save_last_playlist()
         except Exception:
-            pass
+            log.exception("Could not save settings")
         self._closing = True
         self.track_timer.stop()
         self.hide_timer.stop()
+        self._sleep_timer.stop()
+        self._sleep_tip_timer.stop()
         self._show_cursor()
         if self.scanner and self.scanner.isRunning():
-            self.scanner.wait(1000)
+            self.scanner.requestInterruption()      # stop a long folder scan instead of crashing on exit
+            if not self.scanner.wait(5000):
+                log.warning("Folder scan was still running when ALMP closed")
         if self.player:
             try:
                 self.player.terminate()
             except Exception:
-                pass
+                log.exception("mpv did not close cleanly")
         super().closeEvent(event)
 
 
+def _show_startup_error(text):
+    try:
+        _app = QApplication.instance() or QApplication(sys.argv)  # noqa: F841 (keeps it alive)
+        QMessageBox.critical(None, "ALMP cannot start", text)
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    log_path = setup_logging()
+    sys.excepthook = _almp_excepthook
+    threading.excepthook = _almp_thread_excepthook
     if sys.platform != "win32":
         try:
             import faulthandler
@@ -2537,15 +3023,11 @@ if __name__ == "__main__":
     lock_file = QLockFile(os.path.join(temp_dir, "ALMP.lock"))
     cli_paths = [os.path.abspath(a) for a in sys.argv[1:] if a and not a.startswith("-")]
     if not lock_file.tryLock(100):
+        # ALMP is already open (or still opening): hand our files to it, then quit.
         from PyQt6.QtCore import QCoreApplication
         _qc = QCoreApplication(sys.argv)
-        sock = QLocalSocket()
-        sock.connectToServer(IPC_NAME)
-        if sock.waitForConnected(2000):
-            sock.write("\n".join(cli_paths).encode("utf-8"))
-            sock.flush()
-            sock.waitForBytesWritten(2000)
-            sock.disconnectFromServer()
+        if not send_paths_to_running_instance(cli_paths):
+            log.warning("Could not reach the running ALMP; %d file(s) were not passed on", len(cli_paths))
         sys.exit(0)
 
     if sys.platform == "win32":
@@ -2562,8 +3044,21 @@ if __name__ == "__main__":
     except Exception:
         pass
     app = QApplication(sys.argv)
+    if MPV_IMPORT_ERROR is not None:
+        log.error("libmpv could not be loaded: %r", MPV_IMPORT_ERROR)
+        _show_startup_error(
+            "The playback engine (mpv-2.dll) could not be loaded.\n\n"
+            "Please extract the WHOLE ALMP zip file again into a folder on this computer, "
+            "and do not move ALMP.exe out of that folder. If your antivirus program removed "
+            "mpv-2.dll, restore it there.\n\nDetails: " + str(MPV_IMPORT_ERROR))
+        sys.exit(1)
+
+    # Start listening for "open this file" requests before the window is built, so files
+    # opened from Explorer while ALMP is still starting are not lost.
+    ipc = SingleInstanceServer(IPC_NAME, app)
+    ipc.listen()
+
     if sys.platform != "win32":
-        import locale
         locale.setlocale(locale.LC_NUMERIC, "C")
     print(f"[ALMP] Qt platform: {app.platformName()}")
     
@@ -2614,6 +3109,9 @@ if __name__ == "__main__":
         #playButton { background-color: #19c8e6; color: #04222a; border: 1px solid #19c8e6; }
         #playButton:hover { background-color: #3ad8f2; }
         #playButton:pressed { background-color: #12a9c3; }
+        QPushButton:focus, QComboBox:focus { border: 2px solid #ffd54a; }
+        #playButton:focus, #closeButton:focus, #welcomePrimary:focus, #welcomeSecondary:focus { border: 2px solid #ffd54a; }
+        QCheckBox:focus { color: #ffd54a; }
 
         QListWidget {
             background-color: #101010;
@@ -2624,14 +3122,16 @@ if __name__ == "__main__":
         QListWidget::item { padding: 6px 8px; border: none; border-radius: 6px; }
         QListWidget::item:hover { background-color: #1d1d1d; }
         QListWidget::item:selected { background-color: #123a44; color: #ffffff; }
+        QListWidget:focus { border: 1px solid #ffd54a; }
 
-        QSlider::groove:horizontal { height: 4px; background: #2e2e2e; border-radius: 2px; }
-        QSlider::sub-page:horizontal { background: #19c8e6; border-radius: 2px; }
+        QSlider::groove:horizontal { height: 6px; background: #2e2e2e; border-radius: 3px; }
+        QSlider::sub-page:horizontal { background: #19c8e6; border-radius: 3px; }
         QSlider::handle:horizontal {
             background: #ffffff; border: none;
-            width: 12px; height: 12px; margin: -4px 0; border-radius: 6px;
+            width: 16px; height: 16px; margin: -5px 0; border-radius: 8px;
         }
         QSlider::handle:horizontal:hover { background: #19c8e6; }
+        QSlider::handle:horizontal:focus { background: #ffd54a; }
 
         QCheckBox { spacing: 6px; }
         QCheckBox::indicator {
@@ -2678,14 +3178,24 @@ if __name__ == "__main__":
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))
 
+    removed = remove_legacy_history_files()
+    if removed:
+        log.info("Removed old history files from earlier versions: %s", ", ".join(removed))
+
     window = MediaWindow()
     if icon_path:
         window.setWindowIcon(QIcon(icon_path))
     if sys.platform != "win32":
         app.setDesktopFileName("ALMP")
+    _EXCEPTION_NOTIFY = window.notify_error
 
     window.show()
-    window.start_ipc_server()
     if cli_paths:
-        QTimer.singleShot(400, lambda: window.open_external(cli_paths))
-    sys.exit(app.exec())
+        window.open_external(cli_paths)
+    window.attach_ipc_server(ipc)
+    rc = app.exec()
+    if window.scanner is not None and window.scanner.isRunning():
+        # A folder scan is stuck on a slow drive: exit at once instead of letting Qt abort.
+        logging.shutdown()
+        os._exit(rc)
+    sys.exit(rc)
