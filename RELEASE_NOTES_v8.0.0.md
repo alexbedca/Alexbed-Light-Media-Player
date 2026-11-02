@@ -14,9 +14,10 @@ A clean, lighter and more useful release.
 - Lower memory use (about 270 MB while playing in our test, down from about 400 MB).
 - A 10,000-file library loads and searches without freezing the window.
 - In fullscreen the controls and cursor now stay visible while the audio/subtitle menu is open.
+- Deleting a file in fullscreen no longer leaves and re-enters fullscreen; the confirmation appears over the video.
 - Fixed black bands around the welcome screen.
 
 ## Notes
 - ALMP is not code-signed yet, so Windows SmartScreen may ask for confirmation (More info > Run anyway).
 - Built with Nuitka on Python 3.15.2 for this build; future official builds will use Python 3.13/3.14 on GitHub Actions.
-- **SHA-256 of ALMP-v8.0.0-Portable.zip:** `CF2E413DF31EB25103570BD87470D729D2540C639270B28CB460EC767DF3CC0B`
+- **SHA-256 of ALMP-v8.0.0-Portable.zip:** `B54CAC386B45677EB86911987F40C91794719A9E1D5BE30FAF9C1F0BD28FB2EF`
