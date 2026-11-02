@@ -103,14 +103,14 @@ BASE_QSS = """
     #playButton:focus, #closeButton:focus, #welcomePrimary:focus, #welcomeSecondary:focus { border: 2px solid #ffd54a; }
     QCheckBox:focus, QRadioButton:focus { color: #ffd54a; }
 
-    QListView {
+    #playlistView {
         background-color: #101010; border: 1px solid #242424; border-radius: 8px; outline: none;
-        font-size: 14px;
+        font-size: 14px; selection-background-color: #123a44; selection-color: #ffffff;
     }
-    QListView::item { padding: 7px 10px; border: none; border-radius: 6px; }
-    QListView::item:hover { background-color: #1d1d1d; }
-    QListView::item:selected { background-color: #123a44; color: #ffffff; }
-    QListView:focus { border: 1px solid #ffd54a; }
+    #playlistView::item { padding: 0px 10px; border: none; border-radius: 6px; }
+    #playlistView::item:hover { background-color: #1d1d1d; }
+    #playlistView::item:selected { background-color: #123a44; color: #ffffff; }
+    #playlistView:focus { border: 1px solid #ffd54a; }
 
     QSlider::groove:horizontal { height: 6px; background: #2e2e2e; border-radius: 3px; }
     QSlider::sub-page:horizontal { background: #19c8e6; border-radius: 3px; }
@@ -166,9 +166,9 @@ HIGH_CONTRAST_QSS = """
     QPushButton:disabled { color: #bdbdbd; border-color: #bdbdbd; }
     #playButton, #welcomePrimary { background-color: #ffff00; color: #000000; border: 2px solid #ffff00; }
     #welcomeSecondary { background-color: #000000; color: #ffffff; border: 2px solid #ffffff; }
-    QListView { background-color: #000000; border: 2px solid #ffffff; }
-    QListView::item:hover { background-color: #000000; border: 1px solid #ffff00; }
-    QListView::item:selected { background-color: #ffff00; color: #000000; }
+    #playlistView { background-color: #000000; border: 2px solid #ffffff; selection-background-color: #ffff00; selection-color: #000000; }
+    #playlistView::item:hover { background-color: #000000; border: 1px solid #ffff00; }
+    #playlistView::item:selected { background-color: #ffff00; color: #000000; }
     QLineEdit, QComboBox { background-color: #000000; border: 2px solid #ffffff; color: #ffffff; }
     QComboBox QAbstractItemView { background-color: #000000; color: #ffffff; selection-background-color: #ffff00; selection-color: #000000; }
     QMenu { background-color: #000000; border: 2px solid #ffffff; }
@@ -187,7 +187,7 @@ HIGH_CONTRAST_QSS = """
     QPushButton:focus, QComboBox:focus, #playButton:focus, #welcomePrimary:focus, #welcomeSecondary:focus,
     QLineEdit:focus, QTabBar::tab:focus { border: 3px solid #00ffff; }
     QCheckBox:focus, QRadioButton:focus { color: #00ffff; }
-    QListView:focus { border: 3px solid #00ffff; }
+    #playlistView:focus { border: 3px solid #00ffff; }
     QSlider::handle:horizontal:focus { background: #00ffff; }
 """
 

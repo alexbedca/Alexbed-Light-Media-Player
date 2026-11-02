@@ -6,19 +6,20 @@ import math
 import os
 import sys
 
-from PyQt6.QtCore import QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QRectF, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
-    QListView,
     QPushButton,
     QSlider,
     QStyle,
     QStyleOptionSlider,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -286,8 +287,12 @@ class ClickSeekSlider(QSlider):
         super().mousePressEvent(event)
 
 
-class PlaylistView(QListView):
+class PlaylistView(QTableView):
     """The playlist on screen. It only draws the rows you can see (fast with 250,000 files).
+
+    It is a one-column table with fixed row heights on purpose: a QListView recalculates the
+    position of every row whenever rows are added (measured: about 80 ms per 5,000 rows added to a
+    100,000-row list, 190 ms at 250,000), while a table with fixed rows does no per-row work.
 
     Keys while the list has the keyboard focus:
       Up/Down, Page Up/Down, Home/End   move in the list (the list keeps them)
@@ -300,25 +305,49 @@ class PlaylistView(QListView):
     play_requested = pyqtSignal()
     remove_requested = pyqtSignal()
     delete_requested = pyqtSignal()
+    ROW_PADDING = 16                                  # px above + below the text
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setUniformItemSizes(True)               # rows are never measured one by one
-        self.setLayoutMode(QListView.LayoutMode.SinglePass)
+        self.setObjectName("playlistView")
+        self.setShowGrid(False)
+        self.setCornerButtonEnabled(False)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.setWordWrap(False)
+        self.setTabKeyNavigation(False)               # Tab leaves the list, like every other control
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        hh = self.horizontalHeader()
+        hh.hide()
+        hh.setStretchLastSection(True)
+        hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        vh = self.verticalHeader()
+        vh.hide()
+        vh.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)   # never asks the model for row sizes
+        self.update_row_height()
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.setDragDropOverwriteMode(False)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setAccessibleName("Playlist")
         self.setAccessibleDescription("Enter plays the selected track. Delete removes it from the list. "
                                       "The menu key opens more choices.")
+
+    def update_row_height(self):
+        h = self.fontMetrics().height() + self.ROW_PADDING
+        self.verticalHeader().setMinimumSectionSize(1)
+        self.verticalHeader().setDefaultSectionSize(h)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self.update_row_height()
 
     def keyPressEvent(self, event):
         key = event.key()

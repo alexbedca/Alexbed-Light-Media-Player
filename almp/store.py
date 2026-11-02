@@ -142,7 +142,8 @@ class PlaylistStore:
 
     def reorder(self, order):
         """Apply a new order (a permutation of row numbers), e.g. after sorting."""
-        if sorted(order) != list(range(len(self.paths))):
+        n = len(self.paths)
+        if len(order) != n or (n and (min(order) != 0 or max(order) != n - 1 or len(set(order)) != n)):
             raise ValueError("not a permutation of the rows")
         self.paths = [self.paths[i] for i in order]
         self.search = [self.search[i] for i in order]

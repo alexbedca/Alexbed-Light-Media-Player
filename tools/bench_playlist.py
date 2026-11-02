@@ -221,7 +221,7 @@ def bench_window(app, folder, n, tmp_settings):
 
 
 def bench_model(app, n):
-    from PyQt6.QtWidgets import QListView
+    from PyQt6.QtWidgets import QAbstractItemView
 
     from almp.naturalsort import natural_name_key, natural_path_key
     from almp.playlist_model import PlaylistModel
@@ -276,7 +276,7 @@ def bench_model(app, n):
     for _ in range(200):
         row = rng.randrange(n)
         t = time.perf_counter()
-        view.scrollTo(model.index(row), QListView.ScrollHint.PositionAtCenter)
+        view.scrollTo(model.index(row), QAbstractItemView.ScrollHint.PositionAtCenter)
         view.viewport().repaint()
         scroll.append((time.perf_counter() - t) * 1000)
 
@@ -322,6 +322,45 @@ def bench_model(app, n):
     }
 
 
+def compare_views(app, n):
+    """Why ALMP uses a one-column table: rows added to a QListView vs a QTableView (same model)."""
+    from PyQt6.QtWidgets import QListView
+
+    from almp.playlist_model import PlaylistModel
+    from almp.store import make_entry
+    from almp.widgets import PlaylistView
+
+    entries = [make_entry(p) for p in synthetic_paths(n, seed=99, root="E:\\Cmp")]
+    out = {}
+    for name in ("QListView (uniform sizes)", "PlaylistView (QTableView, fixed rows)"):
+        model = PlaylistModel()
+        if name.startswith("QListView"):
+            view = QListView()
+            view.setUniformItemSizes(True)
+        else:
+            view = PlaylistView()
+        view.setModel(model)
+        view.resize(400, 700)
+        view.show()
+        app.processEvents()
+        times = []
+        for i in range(0, n, 5000):
+            t = time.perf_counter()
+            model.append_entries(entries[i:i + 5000])
+            app.processEvents()
+            times.append((time.perf_counter() - t) * 1000)
+        t = time.perf_counter()
+        model.set_filter("e")
+        app.processEvents()
+        f = (time.perf_counter() - t) * 1000
+        out[name] = {"add_chunk_ms_median": round(statistics.median(times), 1),
+                     "add_chunk_ms_last": round(times[-1], 1), "filter_e_ms": round(f, 1)}
+        view.close()
+        view.deleteLater()
+        app.processEvents()
+    return out
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--sizes", default="100000,250000", help="list sizes for the model tests")
@@ -349,6 +388,10 @@ def main(argv=None):
         results["model"][str(n)] = r
         print(f"\n== model, {n:,} entries ==")
         print(json.dumps(r, indent=1))
+
+    results["view_comparison_100k"] = compare_views(app, 100_000)
+    print("\n== view comparison, 100,000 rows added 5,000 at a time ==")
+    print(json.dumps(results["view_comparison_100k"], indent=1))
 
     for n in [int(x) for x in args.disk_sizes.split(",") if x.strip()]:
         base = args.keep or tempfile.mkdtemp(prefix="almp-bench-")

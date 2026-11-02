@@ -2,9 +2,7 @@
 # Copyright (C) 2026 Alexander Bediako
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Settings, Help and About windows. Plain words, big controls, everything reachable with Tab."""
-import os
 import platform
-import sys
 
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, Qt, QUrl
 from PyQt6.QtGui import QDesktopServices, QGuiApplication
@@ -400,7 +398,7 @@ class SettingsDialog(QDialog):
         bottom.addWidget(close)
         outer.addLayout(bottom)
 
-        self._scale_changed(self.scale.currentIndex())
+        self._scale_changed(self.scale.currentIndex(), save=False)
         self._fit_to_screen()
         self.hc.setFocus()
 
@@ -418,9 +416,10 @@ class SettingsDialog(QDialog):
                 return i
         return 0
 
-    def _scale_changed(self, index):
+    def _scale_changed(self, index, save=True):
         if 0 <= index < len(SCALE_CHOICES):
-            self.win.save_ui_scale(SCALE_CHOICES[index][1])
+            if save:
+                self.win.save_ui_scale(SCALE_CHOICES[index][1])
             self.apply_scale.setEnabled(abs(SCALE_CHOICES[index][1] - self.win.running_scale) > 0.01)
 
     def _apply_scale_now(self):
@@ -457,10 +456,3 @@ def describe_engine(player):
             log.debug("mpv property %s not available", prop, exc_info=True)
     return ("Playback engine: " + ", ".join(parts)) if parts else ""
 
-
-def is_windows():
-    return sys.platform == "win32"
-
-
-def file_exists(name):
-    return os.path.exists(get_resource_path(name))

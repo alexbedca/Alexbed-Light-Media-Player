@@ -1270,7 +1270,8 @@ class MediaWindow(QMainWindow):
 
         self.playlist = PlaylistView()
         self.playlist.setModel(self.model)
-        self.playlist.activated.connect(lambda _ix: self.play_selected_item())
+        # Double-click and Enter play (not Qt's "activated", which fires on double-click as well
+        # on Windows and would start the same track twice).
         self.playlist.doubleClicked.connect(lambda _ix: self.play_selected_item())
         self.playlist.play_requested.connect(self.play_selected_item)
         self.playlist.remove_requested.connect(self.remove_from_playlist)
