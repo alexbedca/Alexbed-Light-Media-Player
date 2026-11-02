@@ -303,3 +303,19 @@ def test_loop_is_never_saved(window, qapp, tmp_path):
     window.close()
     saved = json.loads(settings.SETTINGS_PATH.read_text(encoding="utf-8"))
     assert not any("loop" in k for k in saved)
+
+
+def test_start_screen_gets_bigger_in_fullscreen_only(window, qapp):
+    w = window.welcome_widget
+    base = w.btn_files.minimumHeight()
+    window._is_fullscreen = True
+    window.settings["large_buttons"] = "always"
+    window._apply_tv_mode()
+    assert w.btn_files.minimumHeight() > base
+    assert "font-size" in w.btn_files.styleSheet()
+    window.set_large_buttons("never")
+    assert w.btn_files.minimumHeight() == base
+    assert w.btn_files.styleSheet() == ""
+    window._is_fullscreen = False
+    window.set_large_buttons("auto")
+    assert w.btn_files.minimumHeight() == base

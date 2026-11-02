@@ -31,6 +31,7 @@ SETTINGS_VERSION = 2          # 1 = v8.0.x (no "settings_version" key), 2 = v8.1
 
 SCALE_CHOICES = [("Normal (100%)", 1.0), ("Large (125%)", 1.25), ("Extra large (150%)", 1.5), ("Huge (200%)", 2.0)]
 VIDEO_SIZE_CHOICES = [("Fit (whole picture)", "fit"), ("Fill (cropped)", "fill"), ("Stretch", "stretch")]
+LARGE_BUTTON_CHOICES = [("Automatic (big in fullscreen)", "auto"), ("Always big", "always"), ("Never", "never")]
 SUBTITLE_SIZE_CHOICES = [("Small", 0.8), ("Normal", 1.0), ("Large", 1.3), ("Huge", 1.7)]
 
 DEFAULTS = {
@@ -48,6 +49,7 @@ DEFAULTS = {
     "media_controls": True,        # Windows media controls / media keys while ALMP is in the background
     "resume_long_files": False,    # optional, off by default; only files of 20 minutes or more
     "sleep_fade": True,            # fade out during the last minute of the sleep timer
+    "large_buttons": "auto",       # v8.2: start screen size in fullscreen: auto / always / never
 }
 
 
@@ -150,6 +152,8 @@ def effective_settings(raw):
     out["ui_scale"] = scale
     vs = raw.get("video_size", "fit")
     out["video_size"] = vs if vs in {v for _l, v in VIDEO_SIZE_CHOICES} else "fit"
+    lb = raw.get("large_buttons", "auto")
+    out["large_buttons"] = lb if lb in ("auto", "always", "never") else "auto"
     out["subtitle_scale"] = _as_float(raw.get("subtitle_scale", 1.0), 1.0, 0.5, 3.0)
     return out
 

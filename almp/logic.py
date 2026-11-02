@@ -258,3 +258,29 @@ def fmt_time(seconds):
     h, rem = divmod(seconds, 3600)
     m, sec = divmod(rem, 60)
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
+
+
+LARGE_BUTTON_MODES = ("auto", "always", "never")
+
+
+def tv_scale(mode, fullscreen, screen_height_px):
+    """How much bigger the start-screen text and buttons get in fullscreen (1.0 = normal size).
+
+    * "never"  -> always 1.0
+    * "auto"   -> only in fullscreen; grows with the screen height (about 2x on a 1080p TV)
+    * "always" -> like auto, but also in a normal window, and at least 1.5x
+    The screen height is the logical height Qt reports, so ALMP's own interface size is already included."""
+    if mode not in LARGE_BUTTON_MODES:
+        mode = "auto"
+    if mode == "never":
+        return 1.0
+    try:
+        h = float(screen_height_px)
+    except (TypeError, ValueError):
+        return 1.0
+    if h <= 0:
+        return 1.0
+    f = max(1.0, min(3.0, h / 540.0))
+    if mode == "always":
+        return max(1.5, f)
+    return f if fullscreen else 1.0

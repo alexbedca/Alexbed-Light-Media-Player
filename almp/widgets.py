@@ -114,12 +114,14 @@ class WelcomeScreen(QWidget):
         layout.addWidget(logo)
 
         title = QLabel(APP_TITLE)
+        self._title = title
         title.setObjectName("welcomeTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         layout.addWidget(title)
 
         tagline = QLabel("Press play on anything.")
+        self._tagline = tagline
         tagline.setObjectName("welcomeTagline")
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(tagline)
@@ -161,6 +163,33 @@ class WelcomeScreen(QWidget):
     def set_high_contrast(self, on):
         self.high_contrast = bool(on)
         self.update()
+
+    def set_tv_scale(self, factor):
+        """Bigger logo, text and buttons for fullscreen on a TV or big screen (1.0 = normal)."""
+        f = max(1.0, float(factor))
+        if abs(f - getattr(self, "_tv", 1.0)) < 0.01:
+            return
+        self._tv = f
+        if f == 1.0:
+            for w in (self.btn_files, self.btn_folder, self._title, self._tagline, self._hint, self._version):
+                w.setStyleSheet("")
+            self._logo.setPixmap(logo_pixmap(120))
+            self.btn_files.setMinimumSize(0, 0)
+            self.btn_folder.setMinimumSize(0, 0)
+        else:
+            def px(n):
+                return int(round(n * f))
+            for b in (self.btn_files, self.btn_folder):
+                b.setStyleSheet("font-size: %dpx; padding: %dpx %dpx; border-radius: %dpx;"
+                                % (px(16), px(13), px(32), px(10)))
+                b.setMinimumSize(px(150), px(52))
+            self._title.setStyleSheet("font-size: %dpx;" % px(30))
+            self._tagline.setStyleSheet("font-size: %dpx;" % px(16))
+            self._hint.setStyleSheet("font-size: %dpx;" % px(13))
+            self._version.setStyleSheet("font-size: %dpx;" % px(13))
+            self._logo.setPixmap(logo_pixmap(px(120)))
+        self.layout().activate()
+        self._fit_to_height()
 
     def _fit_to_height(self):
         """On a short window (large interface size) drop the extras so the two buttons keep their text:

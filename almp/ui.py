@@ -48,6 +48,7 @@ from . import APP_TITLE, __version__
 from . import platform_win as pw
 from .dialogs import AboutDialog, HelpDialog, SettingsDialog, describe_engine
 from .logic import (
+    LARGE_BUTTON_MODES,
     LOOP_ALL,
     LOOP_LABELS,
     LOOP_MODES,
@@ -76,6 +77,7 @@ from .logic import (
     sleep_fade_factor,
     sleep_minutes_left,
     speed_for_new_track,
+    tv_scale,
     update_resume_table,
 )
 from .logsetup import log
@@ -2374,8 +2376,25 @@ class MediaWindow(QMainWindow):
                 self._hide_cursor()
             self.hide_timer.start()
         self._update_fs_button()
+        self._apply_tv_mode()
         QTimer.singleShot(0, self._layout_overlay)
         self.video.setFocus()
+
+    def _apply_tv_mode(self):
+        """Bigger start screen in fullscreen on a TV or big screen (Settings > Large start screen)."""
+        try:
+            h = self.screen().geometry().height()
+        except (AttributeError, RuntimeError):
+            h = 0
+        self.welcome_widget.set_tv_scale(tv_scale(self.settings.get("large_buttons", "auto"),
+                                                  self._is_fullscreen, h))
+
+    def set_large_buttons(self, value):
+        if value not in LARGE_BUTTON_MODES:
+            value = "auto"
+        self.settings["large_buttons"] = value
+        update_settings(large_buttons=value)
+        self._apply_tv_mode()
 
     # ------------------------------------------------------------------ adding files
     def dragEnterEvent(self, event):
