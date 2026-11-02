@@ -14,7 +14,7 @@ if not exist "%ALMP%" goto :notfound
 echo.
 echo  ALMP will be set up from this location:
 echo.
-echo     %ALMP%
+echo     "%ALMP%"
 echo.
 echo  IMPORTANT: this folder must be on THIS computer (for example in
 echo  Documents), not on the USB stick. If you move the folder later,
@@ -48,10 +48,13 @@ REM ---- ProgID (how Windows opens a file with ALMP) ----
 reg add "%CLS%\ALMP.Media" /ve /d "ALMP Media File" /f >nul 2>&1 || set "FAIL=1"
 reg add "%CLS%\ALMP.Media\DefaultIcon" /ve /d "\"%ALMP%\",0" /f >nul 2>&1 || set "FAIL=1"
 reg add "%CLS%\ALMP.Media\shell\open\command" /ve /d "\"%ALMP%\" \"%%1\"" /f >nul 2>&1 || set "FAIL=1"
+REM "Player" lets you open many selected files at once (not only 15); ALMP collects them in one window.
+reg add "%CLS%\ALMP.Media\shell\open" /v MultiSelectModel /d Player /f >nul 2>&1 || set "FAIL=1"
 
 REM ---- Application entry ("Open with" list) ----
 reg add "%CLS%\Applications\ALMP.exe" /v FriendlyAppName /d "ALMP Media Player" /f >nul 2>&1 || set "FAIL=1"
 reg add "%CLS%\Applications\ALMP.exe\shell\open\command" /ve /d "\"%ALMP%\" \"%%1\"" /f >nul 2>&1 || set "FAIL=1"
+reg add "%CLS%\Applications\ALMP.exe\shell\open" /v MultiSelectModel /d Player /f >nul 2>&1 || set "FAIL=1"
 
 REM ---- Capabilities (makes ALMP appear in Settings > Default apps) ----
 reg add "HKCU\Software\ALMP\Capabilities" /v ApplicationName /d "ALMP" /f >nul 2>&1 || set "FAIL=1"
