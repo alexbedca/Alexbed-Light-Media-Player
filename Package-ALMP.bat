@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 set "VER="
 for /f "usebackq delims=" %%v in (`python tools\get_version.py`) do set "VER=%%v"
-if not defined VER (echo ERROR: could not read the version from main.py & exit /b 1)
+if not defined VER (echo ERROR: could not read the version from almp\__init__.py & exit /b 1)
 set "NAME=ALMP-v%VER%-Portable"
 taskkill /im ALMP.exe /f >nul 2>&1
 if not exist main.dist\ALMP.exe (echo ERROR: build first with Build-ALMP.bat & exit /b 1)

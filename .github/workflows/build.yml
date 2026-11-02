@@ -1,7 +1,7 @@
 # Builds the ALMP portable zip on GitHub's servers, so anyone can see exactly how a release was made.
 # Run it by hand: Actions > Build ALMP > Run workflow.
 #
-# - The version comes from __version__ in main.py (checked: plain X.Y.Z only).
+# - The version comes from __version__ in almp/__init__.py (checked: plain X.Y.Z only).
 # - libmpv is downloaded from ONE pinned release and checked against its SHA-256. The URL and hash
 #   are written here on purpose (no repository variables), so they can only change through a commit.
 #   Pin: zhongfly/mpv-winbuild release 2026-10-23-1140d3cc29, file mpv-dev-x86_64-20261023-git-1140d3cc29.7z
@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Read and check the version from main.py
+      - name: Read and check the version from almp/__init__.py
         shell: pwsh
         run: |
           $ver = (python tools/get_version.py).Trim()
@@ -48,10 +48,14 @@ jobs:
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt nuitka pytest
+          pip install -r requirements.txt nuitka pytest ruff
 
-      - name: Run the logic tests
-        run: python -m pytest -q tests
+      - name: Code checks and tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ruff check .
+          python -m pytest -q tests
 
       - name: Get libmpv (pinned and checksum-verified)
         shell: pwsh
@@ -84,7 +88,7 @@ jobs:
           python -m nuitka --standalone --enable-plugin=pyqt6 --windows-console-mode=disable --lto=yes
           --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico
           --include-data-file=icon.png=icon.png --include-data-file=runtime/mpv-2.dll=runtime/mpv-2.dll
-          --output-filename=ALMP.exe --assume-yes-for-downloads --company-name=Alexbed
+          --include-package=almp --output-filename=ALMP.exe --assume-yes-for-downloads --company-name=Alexbed
           --product-name="Alexbed Light Media Player" --file-description="Alexbed Light Media Player"
           --file-version=%VER%.0 --product-version=%VER%.0 main.py
 

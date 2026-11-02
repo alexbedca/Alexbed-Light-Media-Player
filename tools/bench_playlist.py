@@ -69,7 +69,7 @@ def rss_mb():
                                                      ctypes.byref(pmc), pmc.cb)
             return pmc.WorkingSetSize / (1024 * 1024)
     except Exception:          # noqa: BLE001
-        pass
+        return 0.0
     return 0.0
 
 
