@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
 from . import APP_TITLE, __version__
 from .logsetup import log
 from .paths import get_log_dir, get_resource_path
-from .settings import SCALE_CHOICES, SUBTITLE_SIZE_CHOICES, VIDEO_SIZE_CHOICES
+from .settings import LARGE_BUTTON_CHOICES, SCALE_CHOICES, SUBTITLE_SIZE_CHOICES, VIDEO_SIZE_CHOICES
 
 PROJECT_PAGE = "github.com/alexbedca/Alexbed-Light-Media-Player"
 
@@ -265,6 +265,22 @@ class SettingsDialog(QDialog):
         row.addWidget(self.scale, 1)
         row.addWidget(self.apply_scale)
         lay.addLayout(row)
+        row = QHBoxLayout()
+        lbl = QLabel("Start screen in fullscreen:")
+        self.large = QComboBox()
+        for label, _v in LARGE_BUTTON_CHOICES:
+            self.large.addItem(label)
+        cur = [v for _l, v in LARGE_BUTTON_CHOICES].index(s["large_buttons"])
+        self.large.setCurrentIndex(cur)
+        self.large.setAccessibleName("Start screen size in fullscreen")
+        lbl.setBuddy(self.large)
+        self.large.currentIndexChanged.connect(
+            lambda i: win.set_large_buttons(LARGE_BUTTON_CHOICES[i][1]))
+        row.addWidget(lbl)
+        row.addWidget(self.large, 1)
+        lay.addLayout(row)
+        lay.addWidget(_note("Big buttons and text on a TV or large screen. Automatic makes them bigger "
+                            "only in fullscreen; no restart needed."))
         self.scale_note = _note("The size changes after ALMP restarts. Your playlist is not kept "
                                 "when it restarts (ALMP always starts clean).")
         lay.addWidget(self.scale_note)

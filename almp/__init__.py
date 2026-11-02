@@ -30,7 +30,7 @@ Layout (pure logic first, so it can be tested without a screen):
   theme.py, widgets.py, dialogs.py, ui.py, app.py   the window
 """
 
-__version__ = "8.1.0"
+__version__ = "8.2.0"
 
 APP_TITLE = "Alexbed Light Media Player"
 APP_SHORT = "ALMP"

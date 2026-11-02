@@ -156,3 +156,29 @@ def test_shuffle_never_repeats_the_current_track():
         played.add(files[cur])
         seen.append(cur)
     assert sorted(seen) == [1, 2, 3, 4]
+
+
+def test_tv_scale_auto_only_in_fullscreen():
+    from almp.logic import tv_scale
+    assert tv_scale("auto", False, 1080) == 1.0
+    assert tv_scale("auto", True, 1080) == 2.0
+    assert 1.4 < tv_scale("auto", True, 768) < 1.5
+    assert tv_scale("auto", True, 4000) == 3.0           # capped
+    assert tv_scale("auto", True, 300) == 1.0            # never smaller than normal
+
+
+def test_tv_scale_modes_and_bad_input():
+    from almp.logic import tv_scale
+    assert tv_scale("never", True, 1080) == 1.0
+    assert tv_scale("always", False, 1080) == 2.0
+    assert tv_scale("always", False, 600) == 1.5          # at least 1.5x
+    assert tv_scale("nonsense", True, 1080) == 2.0        # unknown -> auto
+    assert tv_scale("auto", True, None) == 1.0
+    assert tv_scale("auto", True, 0) == 1.0
+
+
+def test_large_buttons_setting_default_and_validation():
+    from almp.settings import effective_settings
+    assert effective_settings({})["large_buttons"] == "auto"
+    assert effective_settings({"large_buttons": "never"})["large_buttons"] == "never"
+    assert effective_settings({"large_buttons": "x"})["large_buttons"] == "auto"
