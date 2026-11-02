@@ -4,13 +4,15 @@ A simple, free media player for Windows, built on the [mpv](https://mpv.io) play
 ALMP is made for people who just want to press play: big clear buttons, a dark modern look,
 and no accounts, ads or tracking.
 
-![ALMP 8.1 start screen](images/screenshot-v8.1-welcome.png)
+![ALMP 8.2 start screen](images/screenshot-v8.2-welcome.png)
 
-![ALMP 8.1 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.1-playing.png)
+![ALMP 8.2 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.2-playing.png)
 
 *High-contrast theme on:*
 
-![ALMP 8.1 with the high-contrast theme](images/screenshot-v8.1-high-contrast.png)
+![ALMP 8.2 with the high-contrast theme](images/screenshot-v8.2-high-contrast.png)
+
+![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
 **Version:** 8.2.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
