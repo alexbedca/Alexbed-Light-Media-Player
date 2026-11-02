@@ -95,8 +95,9 @@ Then delete the ALMP folder.
                   or double-clicking another track still move on.
     Loop: All ... the whole playlist starts again after the last
                   track (with Shuffle: every track once per round).
-  While Loop All is on, played tracks stay in the list even when
-  "Remove played" is ticked. Loop is always Off when ALMP starts.
+  Loop All switches "Remove played" off (unticked and greyed out),
+  so the list never empties. When you leave Loop All, it goes back
+  to how you had it. Loop is always Off when ALMP starts.
 - Album art from embedded tags (MP3, FLAC, M4A).
 - Hardware video decoding when your graphics card supports it.
 - Windows media keys (play/pause, next, previous) work.

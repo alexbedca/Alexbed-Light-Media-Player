@@ -408,11 +408,31 @@ LOOP_TIPS = {
     LOOP_OFF: "Loop is off: playback stops after the last track.\nClick to change  (L)",
     LOOP_ONE: "Loop One: the track that is playing now repeats.\nNext and Prev still move on.\nClick to change  (L)",
     LOOP_ALL: "Loop All: the whole playlist starts again after the last track.\n"
-              "While Loop All is on, played tracks are kept in the list (not removed).\nClick to change  (L)",
+              "\"Remove played\" is switched off while Loop All is on, so tracks are not removed;\n"
+              "it comes back as it was when you leave Loop All.\nClick to change  (L)",
 }
 # If tracks keep ending almost at once (broken or empty files) while looping, stop instead of spinning.
 LOOP_QUICK_END_SECONDS = 1.0
 LOOP_QUICK_END_LIMIT = 8
+
+REMOVE_PLAYED_TIP = "Take each track off the list after it has played to the end."
+REMOVE_PLAYED_LOOP_ALL_TIP = "Not used while Loop All is on (it comes back when you leave Loop All)."
+
+def remove_played_for_loop(new_mode, checked, saved):
+    """Owner rule: Loop All switches "Remove played" off (unticked and greyed out); leaving Loop All
+    puts back what the user had. `saved` is the user's own value while it is overridden, else None.
+    Returns (checked, enabled, saved)."""
+    if new_mode == LOOP_ALL:
+        if saved is None:
+            saved = bool(checked)
+        return (False, False, saved)
+    if saved is not None:
+        return (saved, True, None)
+    return (bool(checked), True, None)
+
+def remove_played_to_save(checked, saved):
+    """The user's real choice: never the temporary Loop All override."""
+    return bool(checked) if saved is None else bool(saved)
 
 def next_loop_mode(mode):
     """Off -> One -> All -> Off. Anything unknown counts as Off."""
@@ -1084,6 +1104,7 @@ class MediaWindow(QMainWindow):
         self._modal_depth = 0
         self._error_streak = 0
         self._loop_mode = LOOP_OFF          # temporary: never saved, always Off at start
+        self._remove_played_saved = None    # user's own "Remove played" while Loop All overrides it
         self._quick_end_streak = 0
         self._play_started = 0.0
         self._playlist_ended = False
@@ -1239,7 +1260,8 @@ class MediaWindow(QMainWindow):
             ("A", "Video size: Fit, Fill, Stretch"), ("S", "Save a picture of the video"),
             ("P", "Playlist drawer (fullscreen)"), ("Ctrl+F", "Search the playlist"),
             ("L", "Loop: Off, One (this track), All (whole playlist).<br>"
-                  "Always Off when ALMP starts. With Loop All, played tracks are not removed."),
+                  "Always Off when ALMP starts. Loop All turns \"Remove played\" off<br>"
+                  "until you leave Loop All."),
             ("Enter", "Play the selected playlist item"),
             ("F1", "This help"), ("Double-click video", "Fullscreen"),
         ]
@@ -1783,8 +1805,7 @@ class MediaWindow(QMainWindow):
 
         self.remove_played_checkbox = QCheckBox("Remove played")
         self.remove_played_checkbox.setChecked(True)
-        self.remove_played_checkbox.setToolTip("Take each track off the list after it has played to the end.\n"
-                                                "Not while Loop All is on: then every track is kept.")
+        self.remove_played_checkbox.setToolTip(REMOVE_PLAYED_TIP)
         self.options_layout_2.addWidget(self.remove_played_checkbox, 1, 0)
 
         self.startup_checkbox = QCheckBox("Run at Startup")
@@ -1982,11 +2003,18 @@ class MediaWindow(QMainWindow):
     def set_loop_mode(self, mode):
         self._loop_mode = mode if mode in LOOP_MODES else LOOP_OFF
         self._quick_end_streak = 0
+        box = self.remove_played_checkbox
+        checked, enabled, self._remove_played_saved = remove_played_for_loop(
+            self._loop_mode, box.isChecked(), self._remove_played_saved)
+        box.setChecked(checked)
+        box.setEnabled(enabled)
+        box.setToolTip(REMOVE_PLAYED_TIP if enabled else REMOVE_PLAYED_LOOP_ALL_TIP)
         self._update_loop_button()
         if self._loop_mode == LOOP_ONE:
             self.status_label.setText("Loop One: the track that is playing will repeat.")
         elif self._loop_mode == LOOP_ALL:
-            self.status_label.setText("Loop All: the playlist will start again after the last track.")
+            self.status_label.setText("Loop All: the playlist will start again after the last track "
+                                      "(\"Remove played\" is off meanwhile).")
         else:
             self.status_label.setText("Loop is off.")
 
@@ -2106,7 +2134,8 @@ class MediaWindow(QMainWindow):
     def _save_settings(self):
         save_settings(settings_to_save(load_settings(), self.volume_slider.value(),
                                        self.shuffle_checkbox.isChecked(),
-                                       self.remove_played_checkbox.isChecked()))
+                                       remove_played_to_save(self.remove_played_checkbox.isChecked(),
+                                                             self._remove_played_saved)))
 
     def _apply_settings(self):
         data = load_settings()

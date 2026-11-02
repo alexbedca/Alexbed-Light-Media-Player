@@ -31,9 +31,9 @@ and it is not a commercial product.
   and the first of them starts playing. The playlist is never wiped. Selecting many files and pressing Enter works too.
 - **Shuffle, loop and "remove played".** The loop button (or `L`) switches between **Loop: Off** (stop after the
   last track), **Loop: One** (the track that is playing repeats until you press Next, Prev or pick another one) and
-  **Loop: All** (the whole playlist starts again; with Shuffle on, every track plays once per round). While Loop All
-  is on, played tracks are kept in the list even if "Remove played" is ticked. The loop choice is not remembered:
-  it is always Off when ALMP starts.
+  **Loop: All** (the whole playlist starts again; with Shuffle on, every track plays once per round). Loop All
+  switches "Remove played" off (unticked and greyed out) so the list never empties; when you leave Loop All it
+  goes back to how you had it. The loop choice is not remembered: it is always Off when ALMP starts.
 - **Album art** from embedded tags (MP3, FLAC, M4A).
 - **Hardware decoding** when your graphics card supports it (mpv `hwdec=auto`).
 - **Fullscreen controls that float over the video**, hiding after 3 seconds (they stay up, with the mouse pointer, while a menu or window is open).

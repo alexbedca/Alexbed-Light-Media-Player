@@ -25,7 +25,7 @@ def test_every_mode_has_a_clear_label_and_tooltip():
     assert main.LOOP_LABELS == {LOOP_OFF: "Loop: Off", LOOP_ONE: "Loop: One", LOOP_ALL: "Loop: All"}
     for mode in main.LOOP_MODES:
         assert "(L)" in main.LOOP_TIPS[mode]
-    assert "not removed" in main.LOOP_TIPS[LOOP_ALL]
+    assert "Remove played" in main.LOOP_TIPS[LOOP_ALL]
 
 
 # --- empty and single-track lists -----------------------------------------
@@ -186,3 +186,47 @@ def test_loop_mode_is_not_read_from_settings():
     src = (main.__file__ and open(main.__file__, encoding="utf-8").read())
     apply_part = src.split("def _apply_settings", 1)[1].split("\n    def ", 1)[0]
     assert "loop" not in apply_part
+
+
+# --- Loop All switches "Remove played" off for a while ----------------------------
+
+def test_loop_all_turns_remove_played_off_and_greys_it_out():
+    assert main.remove_played_for_loop(LOOP_ALL, True, None) == (False, False, True)
+    assert main.remove_played_for_loop(LOOP_ALL, False, None) == (False, False, False)
+
+
+@pytest.mark.parametrize("leave_to", [LOOP_OFF, LOOP_ONE])
+@pytest.mark.parametrize("before", [True, False])
+def test_leaving_loop_all_restores_remove_played(before, leave_to):
+    checked, enabled, saved = main.remove_played_for_loop(LOOP_ALL, before, None)
+    assert main.remove_played_for_loop(leave_to, checked, saved) == (before, True, None)
+
+
+def test_full_cycle_restores_and_never_loses_the_choice():
+    checked, saved, mode = True, None, LOOP_OFF
+    for _ in range(7):                                   # Off > One > All > Off > ...
+        mode = main.next_loop_mode(mode)
+        checked, enabled, saved = main.remove_played_for_loop(mode, checked, saved)
+        assert enabled == (mode != LOOP_ALL)
+        assert main.remove_played_to_save(checked, saved) is True
+    # user unticks it outside Loop All: that is kept too
+    checked, enabled, saved = main.remove_played_for_loop(LOOP_OFF, False, None)
+    assert (checked, enabled, saved) == (False, True, None)
+
+
+def test_entering_loop_all_twice_keeps_the_first_saved_value():
+    _, _, saved = main.remove_played_for_loop(LOOP_ALL, True, None)
+    assert main.remove_played_for_loop(LOOP_ALL, False, saved) == (False, False, True)
+
+
+@pytest.mark.parametrize("before", [True, False])
+def test_closing_during_loop_all_saves_the_real_preference(before):
+    checked, _, saved = main.remove_played_for_loop(LOOP_ALL, before, None)
+    value = main.remove_played_to_save(checked, saved)
+    assert value is before
+    assert main.settings_to_save({}, 80, True, value)["remove_played"] is before
+
+
+def test_remove_played_to_save_without_override():
+    assert main.remove_played_to_save(True, None) is True
+    assert main.remove_played_to_save(False, None) is False
