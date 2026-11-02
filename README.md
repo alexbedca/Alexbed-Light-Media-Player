@@ -20,7 +20,8 @@ and it is not a commercial product.
 - **Large playlists.** Folders load in batches so the window stays responsive. A search box filters the list as you type (tested with a 10,000-file library).
 - **Save your playlist** as an `.m3u8` file (*Add Media > Save Playlist as M3U*) and load it again later.
 - **Sleep timer.** Click the clock button on the control bar, choose 5 minutes to 2 hours, then pick what happens: pause playback, or close ALMP. The clock turns blue while a timer is running.
-- **High-contrast theme** (black, white and yellow) for easier reading. *Add Media > High Contrast Theme*.
+- **High-contrast theme** (black, white and yellow) for easier reading. Click the half-filled circle button on the
+  control bar (next to the clock) to turn it on or off; it turns blue while it is on. Also in *Add Media > High Contrast Theme*.
 - **Drag and drop.** Drop files or folders on the window to add them to the playlist.
 - **Safe delete.** On your computer's own drives, *Delete* sends the file to the Recycle Bin, so a mistake can be undone.
   USB sticks, memory cards and network drives have no Recycle Bin: there ALMP warns you clearly that the file will be
@@ -28,7 +29,11 @@ and it is not a commercial product.
 - **Double-click to play.** Run `Set-ALMP-Defaults.bat` once to register ALMP with Windows, then choose it in *Default apps*.
 - **Single window.** Files you open from Explorer while ALMP is running are added to the playlist in the same window,
   and the first of them starts playing. The playlist is never wiped. Selecting many files and pressing Enter works too.
-- **Shuffle, loop and "remove played".**
+- **Shuffle, loop and "remove played".** The loop button (or `L`) switches between **Loop: Off** (stop after the
+  last track), **Loop: One** (the track that is playing repeats until you press Next, Prev or pick another one) and
+  **Loop: All** (the whole playlist starts again; with Shuffle on, every track plays once per round). While Loop All
+  is on, played tracks are kept in the list even if "Remove played" is ticked. The loop choice is not remembered:
+  it is always Off when ALMP starts.
 - **Album art** from embedded tags (MP3, FLAC, M4A).
 - **Hardware decoding** when your graphics card supports it (mpv `hwdec=auto`).
 - **Fullscreen controls that float over the video**, hiding after 3 seconds (they stay up, with the mouse pointer, while a menu or window is open).
@@ -36,7 +41,7 @@ and it is not a commercial product.
 - **Audio tracks and subtitles.** The button next to the speed box lists audio tracks, subtitles, loads a subtitle file and takes snapshots (`S`).
 - **Video size modes.** Press `A` to cycle Fit, Fill (crop) and Stretch.
 - **Interface size.** Choose 100% to 200% in the playlist panel (applies the next time you open ALMP).
-- **Remembers your settings** (volume, shuffle, loop, remove played, interface size, high contrast).
+- **Remembers your settings** (volume, shuffle, remove played, interface size, high contrast). Loop is not remembered.
 - **Windows media keys** (play/pause, next, previous) work.
 - **Portable and offline.** No installer, no admin rights. ALMP does not connect to the internet.
 - **Error log on your PC only.** If something goes wrong, ALMP keeps running and writes a short report to
@@ -84,6 +89,7 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 | A | Video size: Fit, Fill, Stretch |
 | S | Save a picture of the video (to Pictures) |
 | P | Show / hide the playlist drawer (fullscreen) |
+| L | Loop: Off, One (this track), All (whole playlist) |
 | Ctrl+F | Search the playlist |
 | Enter | Play the selected playlist item |
 | Tab | Move between buttons (the selected one gets a yellow outline) |

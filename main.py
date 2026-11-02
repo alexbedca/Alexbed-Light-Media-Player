@@ -330,7 +330,9 @@ SETTINGS_PATH = SETTINGS_DIR / "settings.json"
 # Older versions (v7) could save the last playlist and video positions here. ALMP now always
 # starts clean, so these files are removed once at start-up: they only held file history.
 LEGACY_HISTORY_FILES = ("resume.json", "last_playlist.json", "last_playlist.tmp")
-LEGACY_SETTINGS_KEYS = ("remember_playlist",)
+# "loop_single" was saved by v7/v8.0.0. The loop choice is now temporary (always Off at start),
+# so an old value is dropped from settings.json the next time settings are saved.
+LEGACY_SETTINGS_KEYS = ("remember_playlist", "loop_single")
 
 def remove_legacy_history_files(folder=None):
     """Delete only the exact old history files listed above (never anything else). Returns what was removed."""
@@ -353,6 +355,14 @@ def load_settings():
         return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+def settings_to_save(old, volume, shuffle, remove_played):
+    """The settings.json content to write on close. The loop mode is never saved."""
+    data = dict(old) if isinstance(old, dict) else {}
+    data.update({"volume": int(volume), "shuffle": bool(shuffle), "remove_played": bool(remove_played)})
+    for key in LEGACY_SETTINGS_KEYS:
+        data.pop(key, None)
+    return data
 
 def save_settings(data):
     try:
@@ -388,6 +398,61 @@ def pick_shuffle_index(files, played, current_index, rng=random):
         played.clear()
         candidates = [i for i in range(n) if i != current_index]
     return rng.choice(candidates)
+
+# --- Loop: Off / One / All ---
+# Temporary choice: it is never saved and is always Off when ALMP starts.
+LOOP_OFF, LOOP_ONE, LOOP_ALL = "off", "one", "all"
+LOOP_MODES = (LOOP_OFF, LOOP_ONE, LOOP_ALL)
+LOOP_LABELS = {LOOP_OFF: "Loop: Off", LOOP_ONE: "Loop: One", LOOP_ALL: "Loop: All"}
+LOOP_TIPS = {
+    LOOP_OFF: "Loop is off: playback stops after the last track.\nClick to change  (L)",
+    LOOP_ONE: "Loop One: the track that is playing now repeats.\nNext and Prev still move on.\nClick to change  (L)",
+    LOOP_ALL: "Loop All: the whole playlist starts again after the last track.\n"
+              "While Loop All is on, played tracks are kept in the list (not removed).\nClick to change  (L)",
+}
+# If tracks keep ending almost at once (broken or empty files) while looping, stop instead of spinning.
+LOOP_QUICK_END_SECONDS = 1.0
+LOOP_QUICK_END_LIMIT = 8
+
+def next_loop_mode(mode):
+    """Off -> One -> All -> Off. Anything unknown counts as Off."""
+    try:
+        i = LOOP_MODES.index(mode)
+    except ValueError:
+        return LOOP_ONE
+    return LOOP_MODES[(i + 1) % len(LOOP_MODES)]
+
+def decide_after_track_end(n_files, current_index, loop_mode, shuffle, remove_played,
+                           all_played=False, quick_end_streak=0):
+    """What to do when a track has played to its end. Returns (action, index):
+      ("stop", -1)      nothing more to play: empty list, or end of the playlist with Loop Off
+      ("replay", i)     Loop One: play track i (the one that just ended) again
+      ("remove", i)     "Remove played" (not with Loop All): remove track i, then go on as before
+      ("play", i)       play track i (next in order; back to 0 with Loop All)
+      ("shuffle", -1)   play a random track not played yet in this round
+      ("new_round", -1) shuffle with Loop All: every track was played, start a new round
+    `all_played` (shuffle only): every track in the list was played in this round."""
+    if n_files <= 0:
+        return ("stop", -1)
+    if loop_mode != LOOP_OFF and quick_end_streak >= LOOP_QUICK_END_LIMIT:
+        return ("stop", -1)
+    valid = 0 <= current_index < n_files
+    if loop_mode == LOOP_ONE and valid:
+        return ("replay", current_index)
+    if remove_played and loop_mode != LOOP_ALL and valid:
+        return ("remove", current_index)
+    if shuffle:
+        if not all_played:
+            return ("shuffle", -1)
+        if loop_mode == LOOP_ALL:
+            return ("new_round", -1)
+        return ("stop", -1)
+    nxt = current_index + 1 if valid else 0
+    if nxt < n_files:
+        return ("play", nxt)
+    if loop_mode == LOOP_ALL:
+        return ("play", 0)
+    return ("stop", -1)
 
 # --- Deleting files safely ---
 # USB sticks, memory cards, CDs and network drives have no Recycle Bin: Windows would delete
@@ -563,6 +628,15 @@ def make_icon(kind, color="#e6e6e6", px=20):
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QRectF(3.5 * u, 3.5 * u, 17 * u, 17 * u))
         line((12, 7.5), (12, 12), (15.5, 14))
+    elif kind == "contrast":
+        r = QRectF(3.5 * u, 3.5 * u, 17 * u, 17 * u)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
+        p.drawPie(r, 90 * 16, 180 * 16)                 # left half filled
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(r)
+    elif kind == "loop":
+        line((4, 11.5), (4, 7), (15, 7)); poly([(14.5, 3.6), (20, 7), (14.5, 10.4)])
+        line((20, 12.5), (20, 17), (9, 17)); poly([(9.5, 13.6), (4, 17), (9.5, 20.4)])
     elif kind == "settings":
         p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QRectF(9 * u, 9 * u, 6 * u, 6 * u))
@@ -1009,6 +1083,11 @@ class MediaWindow(QMainWindow):
         self._removed_played_count = 0
         self._modal_depth = 0
         self._error_streak = 0
+        self._loop_mode = LOOP_OFF          # temporary: never saved, always Off at start
+        self._quick_end_streak = 0
+        self._play_started = 0.0
+        self._playlist_ended = False
+        self._high_contrast = bool(load_settings().get("high_contrast", False))
         self._sleep_minutes = 0
         self._sleep_action = "pause"
         self._sleep_timer = QTimer(self)
@@ -1142,6 +1221,7 @@ class MediaWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key.Key_P), self, activated=self._toggle_fs_playlist)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_search)
         QShortcut(QKeySequence(Qt.Key.Key_S), self, activated=self.take_snapshot)
+        QShortcut(QKeySequence(Qt.Key.Key_L), self, activated=self.cycle_loop_mode)
         QShortcut(QKeySequence(Qt.Key.Key_F1), self, activated=self.show_shortcuts)
         QShortcut(QKeySequence(Qt.Key.Key_Escape), self, activated=lambda: self._toggle_fullscreen() if self._is_fullscreen else None)
         
@@ -1158,6 +1238,8 @@ class MediaWindow(QMainWindow):
             ("Page Up / Page Down", "Previous / next track"), ("M", "Mute"),
             ("A", "Video size: Fit, Fill, Stretch"), ("S", "Save a picture of the video"),
             ("P", "Playlist drawer (fullscreen)"), ("Ctrl+F", "Search the playlist"),
+            ("L", "Loop: Off, One (this track), All (whole playlist).<br>"
+                  "Always Off when ALMP starts. With Loop All, played tracks are not removed."),
             ("Enter", "Play the selected playlist item"),
             ("F1", "This help"), ("Double-click video", "Fullscreen"),
         ]
@@ -1484,8 +1566,11 @@ class MediaWindow(QMainWindow):
         control_btn_style = "font-size: 15px; padding: 9px 16px; font-weight: 600;"
         ICON_SZ = QSize(18, 18)
 
+        # The two side boxes are equal so Prev / Play / Next stay centred. They were 200 px each;
+        # 175 px makes room for the High contrast button without making the row any wider.
+        SIDE_BOX_W = 175
         volume_box = QWidget()
-        volume_box.setFixedWidth(200)
+        volume_box.setFixedWidth(SIDE_BOX_W)
         volume_row = QHBoxLayout(volume_box)
         volume_row.setContentsMargins(0, 0, 0, 0)
         volume_row.setSpacing(8)
@@ -1554,11 +1639,19 @@ class MediaWindow(QMainWindow):
         self.sleep_button.setToolTip("Sleep timer")
         self.sleep_button.clicked.connect(self.show_sleep_menu)
         controls_layout.addWidget(self.sleep_button)
+
+        self.contrast_button = QPushButton()
+        self.contrast_button.setIconSize(ICON_SZ)
+        self.contrast_button.setFixedSize(42, 38)
+        self.contrast_button.setAccessibleName("High contrast theme")
+        self.contrast_button.clicked.connect(self._toggle_high_contrast)
+        controls_layout.addWidget(self.contrast_button)
+        self._update_contrast_button()
         
         controls_layout.addStretch(1)
 
         right_box = QWidget()
-        right_box.setFixedWidth(200)
+        right_box.setFixedWidth(SIDE_BOX_W)
         right_row = QHBoxLayout(right_box)
         right_row.setContentsMargins(0, 0, 0, 0)
         right_row.setSpacing(8)
@@ -1681,11 +1774,17 @@ class MediaWindow(QMainWindow):
         self.shuffle_checkbox.toggled.connect(self.set_shuffle)
         self.options_layout_2.addWidget(self.shuffle_checkbox, 0, 0)
 
-        self.loop_single_checkbox = QCheckBox("Loop 1")
-        self.options_layout_2.addWidget(self.loop_single_checkbox, 0, 1)
+        self.loop_button = QPushButton()
+        self.loop_button.setIconSize(QSize(16, 16))
+        self.loop_button.setAccessibleName("Loop")
+        self.loop_button.clicked.connect(self.cycle_loop_mode)
+        self.options_layout_2.addWidget(self.loop_button, 0, 1)
+        self._update_loop_button()
 
         self.remove_played_checkbox = QCheckBox("Remove played")
         self.remove_played_checkbox.setChecked(True)
+        self.remove_played_checkbox.setToolTip("Take each track off the list after it has played to the end.\n"
+                                                "Not while Loop All is on: then every track is kept.")
         self.options_layout_2.addWidget(self.remove_played_checkbox, 1, 0)
 
         self.startup_checkbox = QCheckBox("Run at Startup")
@@ -1742,7 +1841,7 @@ class MediaWindow(QMainWindow):
         self._fill_sleep_menu(menu.addMenu("Sleep Timer"))
         hc = menu.addAction("High Contrast Theme")
         hc.setCheckable(True)
-        hc.setChecked(bool(load_settings().get("high_contrast", False)))
+        hc.setChecked(self._high_contrast)
         hc.triggered.connect(self.set_high_contrast)
 
         button = self.sender()
@@ -1855,12 +1954,47 @@ class MediaWindow(QMainWindow):
         self.status_label.setText("Sleep timer: playback paused.")
 
     def set_high_contrast(self, enabled):
+        """Used by both the menu item and the bar button, so they always agree."""
+        enabled = bool(enabled)
+        self._high_contrast = enabled
         app = QApplication.instance()
         base = app.property("almp_base_qss") or ""
         app.setStyleSheet(base + (HIGH_CONTRAST_QSS if enabled else ""))
         data = load_settings()
-        data["high_contrast"] = bool(enabled)
+        data["high_contrast"] = enabled
         save_settings(data)
+        self._update_contrast_button()
+        self.status_label.setText("High contrast theme is on." if enabled else "High contrast theme is off.")
+
+    def _toggle_high_contrast(self):
+        if self._is_fullscreen:
+            self._on_fs_activity()
+        self.set_high_contrast(not self._high_contrast)
+
+    def _update_contrast_button(self):
+        on = self._high_contrast
+        self.contrast_button.setIcon(make_icon("contrast", "#19c8e6" if on else "#e6e6e6", 18))
+        self.contrast_button.setToolTip("High contrast theme (on/off)\nNow: " + ("On" if on else "Off"))
+
+    def cycle_loop_mode(self):
+        self.set_loop_mode(next_loop_mode(self._loop_mode))
+
+    def set_loop_mode(self, mode):
+        self._loop_mode = mode if mode in LOOP_MODES else LOOP_OFF
+        self._quick_end_streak = 0
+        self._update_loop_button()
+        if self._loop_mode == LOOP_ONE:
+            self.status_label.setText("Loop One: the track that is playing will repeat.")
+        elif self._loop_mode == LOOP_ALL:
+            self.status_label.setText("Loop All: the playlist will start again after the last track.")
+        else:
+            self.status_label.setText("Loop is off.")
+
+    def _update_loop_button(self):
+        on = self._loop_mode != LOOP_OFF
+        self.loop_button.setText(LOOP_LABELS[self._loop_mode])
+        self.loop_button.setIcon(make_icon("loop", "#19c8e6" if on else "#e6e6e6", 16))
+        self.loop_button.setToolTip(LOOP_TIPS[self._loop_mode])
 
     def _init_player(self):
         try:
@@ -1970,23 +2104,15 @@ class MediaWindow(QMainWindow):
             self.status_label.setText("Interface size saved - close and reopen ALMP to apply it.")
 
     def _save_settings(self):
-        data = load_settings()
-        data.update({
-            "volume": self.volume_slider.value(),
-            "shuffle": self.shuffle_checkbox.isChecked(),
-            "loop_single": self.loop_single_checkbox.isChecked(),
-            "remove_played": self.remove_played_checkbox.isChecked(),
-        })
-        for key in LEGACY_SETTINGS_KEYS:
-            data.pop(key, None)
-        save_settings(data)
+        save_settings(settings_to_save(load_settings(), self.volume_slider.value(),
+                                       self.shuffle_checkbox.isChecked(),
+                                       self.remove_played_checkbox.isChecked()))
 
     def _apply_settings(self):
         data = load_settings()
         try:
             self.volume_slider.setValue(int(data.get("volume", 100)))
             self.shuffle_checkbox.setChecked(bool(data.get("shuffle", True)))
-            self.loop_single_checkbox.setChecked(bool(data.get("loop_single", False)))
             self.remove_played_checkbox.setChecked(bool(data.get("remove_played", True)))
         except Exception:
             log.exception("Could not apply saved settings")
@@ -2825,6 +2951,8 @@ class MediaWindow(QMainWindow):
             if len(self._history) > 500:
                 del self._history[:100]
         self._end_event_pending = False
+        self._playlist_ended = False
+        self._play_started = time.monotonic()
         self.current_index = index
         self.current_path = path
         self._played_paths.add(path)
@@ -2879,7 +3007,12 @@ class MediaWindow(QMainWindow):
 
         try:
             if self.player.idle_active:
-                self.play_index(self.current_index if self.current_index >= 0 else 0)
+                if self._playlist_ended:                  # Loop Off finished the list: start again
+                    self._played_paths.clear()
+                    idx = pick_shuffle_index(self.files, self._played_paths, -1) if self.shuffle_enabled else 0
+                    self.play_index(idx if idx >= 0 else 0)
+                else:
+                    self.play_index(self.current_index if self.current_index >= 0 else 0)
             else:
                 self.player.pause = not self.player.pause
                 self._set_play_ui(not self.player.pause)
@@ -2939,14 +3072,53 @@ class MediaWindow(QMainWindow):
         self._error_streak = 0
         self.track_timer.stop()
 
-        if self.loop_single_checkbox.isChecked() and self.current_index >= 0:
-            self.play_index(self.current_index)
-            return
-
-        if self.remove_played_checkbox.isChecked():
-            self._remove_current_and_advance()
+        if time.monotonic() - self._play_started < LOOP_QUICK_END_SECONDS:
+            self._quick_end_streak += 1
         else:
+            self._quick_end_streak = 0
+
+        n = len(self.files)
+        all_played = False
+        if self.shuffle_enabled and n:
+            played = self._played_paths
+            played_in_list = sum(1 for p in self.files if p in played)
+            if played_in_list != len(played):
+                played.intersection_update(self.files)   # forget tracks no longer in the list
+            all_played = played_in_list == n
+        # Loop is done by playing the file again ourselves (not with mpv's loop-file option),
+        # so every repeat still sends this end-of-file event and nothing else has to change.
+        action, idx = decide_after_track_end(
+            n, self.current_index, self._loop_mode, self.shuffle_enabled,
+            self.remove_played_checkbox.isChecked(), all_played, self._quick_end_streak)
+
+        if action == "replay" or action == "play":
+            self.play_index(idx)
+        elif action == "remove":
+            self._remove_current_and_advance()
+        elif action == "shuffle":
             self.next_track()
+        elif action == "new_round":
+            # Every track was played: forget them all, so the new round plays each track again
+            # (pick_shuffle_index never picks the track that just ended as the very next one).
+            self._played_paths.clear()
+            self.next_track()
+        else:
+            self._finish_playlist()
+
+    def _finish_playlist(self):
+        """Loop Off reached the end of the list (or looping was stopped because files end at once).
+        The list is kept; Play starts again from the beginning."""
+        quick = self._loop_mode != LOOP_OFF and self._quick_end_streak >= LOOP_QUICK_END_LIMIT
+        self._quick_end_streak = 0
+        self._playlist_ended = True
+        self._played_paths.clear()
+        self._set_play_ui(False)
+        self.track_timer.stop()
+        self.progress_slider.setValue(0)
+        if quick:
+            self.status_label.setText("Loop stopped: these files end straight away (they may be damaged).")
+        else:
+            self.status_label.setText("End of playlist. Press Play to start again.")
 
     def _remove_current_and_advance(self):
         if self.current_index < 0 or self.current_index >= len(self.files):

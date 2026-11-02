@@ -84,18 +84,28 @@ Then delete the ALMP folder.
   Pause playback, or Close ALMP. The clock turns blue while it runs.
 - Audio tracks and subtitles: the button next to the speed box. In
   fullscreen the bar stays up while this menu is open.
-- High Contrast Theme: Add Media menu (black, white and yellow).
-- Shuffle, Loop 1, and "Remove played". Shuffle picks a random track
-  each time; with "Remove played" off, a track can repeat.
+- High Contrast Theme (black, white and yellow): click the half-filled
+  circle button next to the clock on the control bar to turn it on or
+  off (it turns blue while on). Also in the Add Media menu.
+- Shuffle and "Remove played". Shuffle picks a random track that has
+  not been played yet in this round.
+- Loop button (or press L) cycles through:
+    Loop: Off ... playback stops after the last track.
+    Loop: One ... the track that is playing now repeats. Next / Prev
+                  or double-clicking another track still move on.
+    Loop: All ... the whole playlist starts again after the last
+                  track (with Shuffle: every track once per round).
+  While Loop All is on, played tracks stay in the list even when
+  "Remove played" is ticked. Loop is always Off when ALMP starts.
 - Album art from embedded tags (MP3, FLAC, M4A).
 - Hardware video decoding when your graphics card supports it.
 - Windows media keys (play/pause, next, previous) work.
 - Interface size: choose 100% - 200% in the playlist panel
   (takes effect the next time you open ALMP).
 - Click anywhere on the progress bar to jump there.
-- Your volume, shuffle, loop, remove-played, interface size and high
+- Your volume, shuffle, remove-played, interface size and high
   contrast choice are remembered between runs (saved in
-  %APPDATA%\ALMP\settings.json).
+  %APPDATA%\ALMP\settings.json). Loop is not remembered.
 
 --------------------------------------------------------------------
 5. KEYBOARD SHORTCUTS
@@ -110,6 +120,7 @@ M ................. Mute
 A ................. Video size: Fit, Fill (crop), Stretch
 S ................. Save a picture of the video (to Pictures)
 P ................. Show / hide the playlist drawer (fullscreen)
+L ................. Loop: Off / One (this track) / All (playlist)
 Ctrl+F ............ Search the playlist
 Enter ............. Play the selected playlist item
 Tab ............... Move between buttons (yellow outline)

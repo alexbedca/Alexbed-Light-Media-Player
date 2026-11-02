@@ -11,6 +11,7 @@ Plans can change - open an issue or a discussion if something matters to you.
 - [x] Click-to-seek, Enter plays the selected item, visible keyboard focus, fullscreen pointer stays visible over dialogs
 - [x] Old "ANSI" `.m3u` playlists load correctly; licence texts included in the zip
 - [x] Build version comes from `main.py`; workflow inputs pinned
+- [x] High contrast on/off button on the control bar; three-way loop (Off / One / All, key `L`), not remembered between runs
 
 ## Done (v8.0.0)
 - [x] Starts clean: no remembered position or playlist, lower memory use
