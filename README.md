@@ -137,7 +137,8 @@ numbers for slower hardware. Not measured yet: a real Windows desktop with the r
 | Typing one more letter (refined search), 250,000 | 2.7 ms | 3.8 ms |
 | Jump to a random row and repaint (average / worst) | 2.0 / 2.6 ms | 2.9 / 4.4 ms |
 | Natural sort of 250,000 by name (background thread) + applying it | 2.7 s + 31 ms | 2.7 s + 39 ms |
-| Memory growth of the list data: 100,000 / 250,000 entries | 34 / 59 MB | not measured (bug in the script, fixed since) |
+| Memory growth of the list data: 100,000 / 250,000 entries | 34 / 59 MB | 28 / 59 MB (run 41499999014) |
+| Whole window after scanning 100,000 files (process memory) | 127 -> 159 MB | 107 -> 141 MB (run 41499999014) |
 
 Why a table and not a list: with the same model, Qt's `QListView` needed a median of 115 ms (Linux) / 112 ms
 (Windows) to add 5,000 rows to a 100,000-row list because it re-positions every row; the one-column table that
@@ -145,7 +146,7 @@ ALMP now uses needed 3.5 / 4.0 ms (also measured by the script, "view comparison
 
 Honest summary: the targets "first track playable in under 1 s" and "100,000-file search under 100 ms" were met
 on these machines; "the window never blocks more than 50 ms" was **not quite** met during a 100,000-file scan
-(one or two pauses of 61-148 ms in total). The search itself runs on the window thread after a short pause in
+(one or two pauses of 61-148 ms in run 41499364586; 34 ms and 83 ms in the next run 41499999014, so it varies). The search itself runs on the window thread after a short pause in
 typing (150-250 ms), which is fast enough at these sizes.
 
 Measure your own PC (no screen, no sound, files are created in a temporary folder and deleted again):
