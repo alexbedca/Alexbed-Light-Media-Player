@@ -5,6 +5,7 @@ echo.
 echo  This undoes everything ALMP has set up in Windows for your account:
 echo    - ALMP in the "Open with" and "Default apps" lists
 echo    - "Run at Startup" (if you had turned it on)
+echo    - "Play with ALMP" in the folder right-click menu (if you had turned it on)
 echo.
 echo  Your music and video files are NOT touched.
 echo  Please close ALMP before you continue.
@@ -30,6 +31,8 @@ reg delete "%CLS%\ALMP.Media" /f >nul 2>&1
 reg delete "%CLS%\Applications\ALMP.exe" /f >nul 2>&1
 reg delete "HKCU\Software\ALMP" /f >nul 2>&1
 reg delete "HKCU\Software\RegisteredApplications" /v ALMP /f >nul 2>&1
+REM ---- "Play with ALMP" in the folder right-click menu (added from ALMP Settings in v8.1) ----
+reg delete "%CLS%\Directory\shell\ALMP.PlayFolder" /f >nul 2>&1
 
 REM ---- Run at Startup (current shortcut, and the registry entry used by old versions) ----
 if defined APPDATA if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ALMP.lnk" del /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ALMP.lnk" >nul 2>&1
@@ -46,13 +49,13 @@ if errorlevel 2 goto :done
 
 REM Only ALMP's own files are deleted, by name; the folders are removed only if they are then empty.
 if defined APPDATA if exist "%APPDATA%\ALMP\" (
-    for %%F in (settings.json startup_target.txt resume.json last_playlist.json last_playlist.tmp) do (
+    for %%F in (settings.json settings.json.tmp positions.json positions.json.tmp startup_target.txt resume.json last_playlist.json last_playlist.tmp) do (
         if exist "%APPDATA%\ALMP\%%F" del /q "%APPDATA%\ALMP\%%F" >nul 2>&1
     )
     rmdir "%APPDATA%\ALMP" >nul 2>&1
 )
 if defined LOCALAPPDATA if exist "%LOCALAPPDATA%\ALMP\" (
-    for %%F in (almp.log almp.log.1) do (
+    for %%F in (almp.log almp.log.1 media-controls-starting.flag) do (
         if exist "%LOCALAPPDATA%\ALMP\%%F" del /q "%LOCALAPPDATA%\ALMP\%%F" >nul 2>&1
     )
     rmdir "%LOCALAPPDATA%\ALMP" >nul 2>&1

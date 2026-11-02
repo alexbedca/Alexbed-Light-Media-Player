@@ -1,0 +1,45 @@
+# DRAFT winget manifest (singleton format) for ALMP 8.1.0 - NOT submitted.
+# Before submitting to https://github.com/microsoft/winget-pkgs:
+#   1. Replace InstallerUrl with the real release asset URL of the zip you published.
+#   2. Replace InstallerSha256 with that exact zip's SHA-256 (from the Actions run summary).
+#   3. Validate locally:  winget validate --manifest packaging\winget\Alexbed.ALMP.yaml
+#      and test:          winget install --manifest packaging\winget\Alexbed.ALMP.yaml
+#   4. The winget-pkgs repository now asks for the multi-file format (version / installer /
+#      defaultLocale files); `wingetcreate new <url>` can generate those from this information.
+# See packaging/README.md.
+PackageIdentifier: Alexbed.ALMP
+PackageVersion: 8.1.0
+PackageLocale: en-US
+Publisher: Alexander Bediako
+PublisherUrl: https://github.com/alexbedca
+PublisherSupportUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/issues
+PackageName: Alexbed Light Media Player
+PackageUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player
+License: GPL-3.0-or-later
+LicenseUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/blob/main/LICENSE
+ShortDescription: A simple, free, offline media player for Windows with big clear buttons, built on mpv.
+Description: >-
+  ALMP is a lightweight, portable media player for people who just want to press play.
+  It handles very large playlists, has a high-contrast theme and large interface sizes,
+  works fully offline and has no ads, accounts or tracking.
+Moniker: almp
+Tags:
+  - media-player
+  - music
+  - video
+  - mpv
+  - accessibility
+  - portable
+  - offline
+ReleaseNotesUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/tag/v8.1.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: ALMP-v8.1.0-Portable\ALMP.exe
+    PortableCommandAlias: almp
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.1.0/ALMP-v8.1.0-Portable.zip
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: singleton
+ManifestVersion: 1.6.0
