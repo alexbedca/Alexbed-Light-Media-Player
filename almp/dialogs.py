@@ -270,6 +270,46 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.scale_note)
         lay.addWidget(_line())
 
+        # --- Windows ---
+        lay.addWidget(_section("Windows"))
+        self.media_keys = QCheckBox("Media keys work while ALMP is in the background "
+                                    "(Windows media controls)")
+        self.media_keys.setChecked(bool(s["media_controls"]))
+        self.media_keys.toggled.connect(win.set_media_controls)
+        lay.addWidget(self.media_keys)
+        self.media_note = _note(win.media_controls_status_text())
+        lay.addWidget(self.media_note)
+
+        self.startup = QCheckBox("Start ALMP when I sign in to Windows")
+        self.startup.setChecked(win.startup_checkbox.isChecked())
+        self.startup.toggled.connect(win.startup_checkbox.setChecked)
+        win.startup_checkbox.toggled.connect(self._sync_startup)
+        lay.addWidget(self.startup)
+
+        can_reg = win.can_register_with_windows()
+        row = QHBoxLayout()
+        self.make_default = QPushButton("Make ALMP my default player...")
+        self.make_default.setEnabled(can_reg)
+        self.make_default.clicked.connect(win.make_default_player)
+        self.undo_default = QPushButton("Remove ALMP from Default apps")
+        self.undo_default.setEnabled(can_reg)
+        self.undo_default.clicked.connect(win.remove_default_player)
+        row.addWidget(self.make_default)
+        row.addWidget(self.undo_default)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.folder_verb = QCheckBox('Show "Play with ALMP" when I right-click a folder in Explorer')
+        self.folder_verb.setEnabled(can_reg)
+        self.folder_verb.setChecked(win.folder_verb_installed())
+        self.folder_verb.toggled.connect(self._folder_verb_toggled)
+        lay.addWidget(self.folder_verb)
+        if not can_reg:
+            lay.addWidget(_note("These Windows options work in ALMP.exe on Windows only."))
+        else:
+            lay.addWidget(_note("These change settings for your Windows account only, and can be undone "
+                                "here or with Remove-ALMP-Defaults.bat."))
+        lay.addWidget(_line())
+
         # --- Playback ---
         lay.addWidget(_section("Playback"))
         row = QHBoxLayout()
@@ -344,44 +384,6 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.sub_box)
         lay.addWidget(_line())
 
-        # --- Windows ---
-        lay.addWidget(_section("Windows"))
-        self.media_keys = QCheckBox("Media keys work while ALMP is in the background "
-                                    "(Windows media controls)")
-        self.media_keys.setChecked(bool(s["media_controls"]))
-        self.media_keys.toggled.connect(win.set_media_controls)
-        lay.addWidget(self.media_keys)
-        self.media_note = _note(win.media_controls_status_text())
-        lay.addWidget(self.media_note)
-
-        self.startup = QCheckBox("Start ALMP when I sign in to Windows")
-        self.startup.setChecked(win.startup_checkbox.isChecked())
-        self.startup.toggled.connect(win.startup_checkbox.setChecked)
-        win.startup_checkbox.toggled.connect(self._sync_startup)
-        lay.addWidget(self.startup)
-
-        can_reg = win.can_register_with_windows()
-        row = QHBoxLayout()
-        self.make_default = QPushButton("Make ALMP my default player...")
-        self.make_default.setEnabled(can_reg)
-        self.make_default.clicked.connect(win.make_default_player)
-        self.undo_default = QPushButton("Remove ALMP from Default apps")
-        self.undo_default.setEnabled(can_reg)
-        self.undo_default.clicked.connect(win.remove_default_player)
-        row.addWidget(self.make_default)
-        row.addWidget(self.undo_default)
-        row.addStretch(1)
-        lay.addLayout(row)
-        self.folder_verb = QCheckBox('Show "Play with ALMP" when I right-click a folder in Explorer')
-        self.folder_verb.setEnabled(can_reg)
-        self.folder_verb.setChecked(win.folder_verb_installed())
-        self.folder_verb.toggled.connect(self._folder_verb_toggled)
-        lay.addWidget(self.folder_verb)
-        if not can_reg:
-            lay.addWidget(_note("These Windows options work in ALMP.exe on Windows only."))
-        else:
-            lay.addWidget(_note("These change settings for your Windows account only, and can be undone "
-                                "here or with Remove-ALMP-Defaults.bat."))
         lay.addStretch(1)
 
         bottom = QHBoxLayout()

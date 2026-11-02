@@ -1937,6 +1937,7 @@ class MediaWindow(QMainWindow):
         self._ext_play_key = None
         self._removed_played_count = 0
         self.track_timer.stop()
+        self.search_edit.clear()        # an old search must not hide the files added next
         self.model.clear()
         self.queue.clear()
         self._played_paths.clear()
