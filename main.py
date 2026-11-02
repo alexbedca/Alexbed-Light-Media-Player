@@ -1465,7 +1465,7 @@ class MediaWindow(QMainWindow):
             menu.popup(pos)
         except Exception as e:
             print(f"Error showing context menu: {e}")
-            self.status_label.setText("Right-click menu failed. Please use the Settings button on the bottom bar.")
+            self.status_label.setText("Right-click menu failed. Please use the buttons on the bottom bar.")
 
     def _safe_set_mpv_prop(self, prop, value):
         if self.player:

@@ -34,4 +34,5 @@ _backup/
 *.zip
 *.log
 _testmedia/
+_screenmedia/
 Test-Launch.bat

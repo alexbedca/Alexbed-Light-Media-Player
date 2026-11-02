@@ -100,7 +100,7 @@ Then delete the ALMP folder.
   to how you had it. Loop is always Off when ALMP starts.
 - Album art from embedded tags (MP3, FLAC, M4A).
 - Hardware video decoding when your graphics card supports it.
-- Windows media keys (play/pause, next, previous) work.
+- Windows media keys (play/pause, next, previous) work while the ALMP window is the active window.
 - Interface size: choose 100% - 200% in the playlist panel
   (takes effect the next time you open ALMP).
 - Click anywhere on the progress bar to jump there.

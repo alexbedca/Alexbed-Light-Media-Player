@@ -6,6 +6,12 @@ and no accounts, ads or tracking.
 
 ![ALMP Preview](images/screenshot-v8-welcome.png)
 
+![ALMP playing a video, with the quick-access buttons and Loop button](images/screenshot-v8.0.1-playing.png)
+
+*High-contrast theme on, with Loop: All ("Remove played" is switched off automatically):*
+
+![ALMP with the high-contrast theme and Loop: All](images/screenshot-v8.0.1-high-contrast.png)
+
 **Version:** 8.0.1 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
@@ -42,7 +48,7 @@ and it is not a commercial product.
 - **Video size modes.** Press `A` to cycle Fit, Fill (crop) and Stretch.
 - **Interface size.** Choose 100% to 200% in the playlist panel (applies the next time you open ALMP).
 - **Remembers your settings** (volume, shuffle, remove played, interface size, high contrast). Loop is not remembered.
-- **Windows media keys** (play/pause, next, previous) work.
+- **Windows media keys** (play/pause, next, previous) work while the ALMP window is the active window.
 - **Portable and offline.** No installer, no admin rights. ALMP does not connect to the internet.
 - **Error log on your PC only.** If something goes wrong, ALMP keeps running and writes a short report to
   `%LOCALAPPDATA%\ALMP\almp.log`. It is never sent anywhere; attach it to a bug report if you like.
