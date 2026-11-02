@@ -120,7 +120,40 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 
 ## Performance
 
-PERF_PLACEHOLDER
+Measured with `tools/bench_playlist.py` on GitHub Actions runners (4 virtual CPUs, Qt 6.12 offscreen,
+Python 3.13, mpv replaced by a stand-in, empty generated files), CI run 41499364586 on commit `fe7dfd0`.
+These are server machines, not an old home PC: **run the script on your own PC** (see below) before quoting
+numbers for slower hardware. Not measured yet: a real Windows desktop with the real mpv, USB sticks, network shares.
+
+| Measured | Linux runner | Windows runner |
+|---|---|---|
+| Folder with 100,000 files: first track handed to the player | 0.06 s | 0.09 s |
+| Folder with 100,000 files: all in the list | 1.2 s | 1.6 s |
+| Longest window-thread stall while loading those 100,000 (5 ms heartbeat) | 61 ms (1 tick over 50 ms) | 148 ms (2 ticks over 50 ms) |
+| Adding 5,000 rows to the list (median / worst), 100,000 rows | 3.4 / 7.4 ms | 4.2 / 8.1 ms |
+| Same at 250,000 rows | 3.9 / 8.8 ms | 4.8 / 9.6 ms |
+| Search, 100,000 files ("love" / "e" / no match) | 6.5 / 8.1 / 6.0 ms | 8.4 / 10.7 / 6.2 ms |
+| Search, 250,000 files (same queries; worst query measured 33-44 ms) | 12.5 / 16.9 / 14.5 ms | 19.0 / 24.6 / 15.4 ms |
+| Typing one more letter (refined search), 250,000 | 2.7 ms | 3.8 ms |
+| Jump to a random row and repaint (average / worst) | 2.0 / 2.6 ms | 2.9 / 4.4 ms |
+| Natural sort of 250,000 by name (background thread) + applying it | 2.7 s + 31 ms | 2.7 s + 39 ms |
+| Memory growth of the list data: 100,000 / 250,000 entries | 34 / 59 MB | not measured (bug in the script, fixed since) |
+
+Why a table and not a list: with the same model, Qt's `QListView` needed a median of 115 ms (Linux) / 112 ms
+(Windows) to add 5,000 rows to a 100,000-row list because it re-positions every row; the one-column table that
+ALMP now uses needed 3.5 / 4.0 ms (also measured by the script, "view comparison").
+
+Honest summary: the targets "first track playable in under 1 s" and "100,000-file search under 100 ms" were met
+on these machines; "the window never blocks more than 50 ms" was **not quite** met during a 100,000-file scan
+(one or two pauses of 61-148 ms in total). The search itself runs on the window thread after a short pause in
+typing (150-250 ms), which is fast enough at these sizes.
+
+Measure your own PC (no screen, no sound, files are created in a temporary folder and deleted again):
+
+```bash
+pip install -r requirements.txt
+python tools/bench_playlist.py --sizes 100000,250000 --disk-sizes 100000 --json my-pc.json
+```
 
 ## Run from source
 
