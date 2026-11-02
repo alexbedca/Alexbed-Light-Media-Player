@@ -33,7 +33,6 @@ import logging.handlers
 import re
 import traceback
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 log = logging.getLogger("almp")
@@ -246,7 +245,10 @@ def _playlist_entry_to_path(line, base):
         p = parsed.path
         if parsed.netloc and parsed.netloc.lower() != "localhost":
             p = "//" + parsed.netloc + p          # file://server/share/song.mp3
-        return os.path.normpath(urllib.request.url2pathname(p))
+        p = urllib.parse.unquote(p)
+        if re.match(r"/[A-Za-z]:", p):            # file:///C:/Music/song.mp3
+            p = p[1:]
+        return os.path.normpath(p)
     entry = line if os.path.isabs(line) else os.path.join(base, line)
     return os.path.normpath(entry)
 
@@ -1029,6 +1031,7 @@ class MediaWindow(QMainWindow):
         self._is_fullscreen = False 
         self._end_event_pending = False
         self._ext_queue = []
+        self._last_ext_time = -1e9
         self.ipc_server = None
 
         self.track_timer = QTimer(self)
@@ -1111,7 +1114,12 @@ class MediaWindow(QMainWindow):
         paths, self._ext_queue = self._ext_queue, []
         # Files opened from Explorer are ADDED to the playlist (it is never wiped), and the
         # first of them starts playing, so a double-click always plays what was clicked.
-        self.scan_targets(paths, external=True)
+        # Several files opened together arrive one after another (one small message each);
+        # only the first group of such a burst starts playing, the rest are just added.
+        now = time.monotonic()
+        start_playing = (now - self._last_ext_time) > 3.0
+        self._last_ext_time = now
+        self.scan_targets(paths, external=start_playing)
         self._bring_to_front()
 
     def _bring_to_front(self):
@@ -2301,8 +2309,7 @@ class MediaWindow(QMainWindow):
                     return
             except Exception:
                 return
-            QApplication.processEvents()
-            time.sleep(0.05)
+            time.sleep(0.05)      # mpv updates idle-active on its own thread
 
     def delete_selected_file(self):
         item = self.playlist.currentItem()

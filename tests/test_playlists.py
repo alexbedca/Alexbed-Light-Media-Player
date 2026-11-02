@@ -78,3 +78,10 @@ def test_round_trip(tmp_path):
         pl = tmp_path / name
         main.write_playlist_file(str(pl), files)
         assert main.read_playlist_file(str(pl)) == files
+
+
+def test_windows_style_file_uris():
+    to_path = main._playlist_entry_to_path
+    assert to_path("file:///C:/Music/a%20b.mp3", "X").replace("\\", "/") == "C:/Music/a b.mp3"
+    assert to_path("file://server/share/x.mp3", "X").replace("\\", "/") == "//server/share/x.mp3"
+    assert to_path("FILE://localhost/C:/M/%C3%A9.mp3", "X").replace("\\", "/") == "C:/M/é.mp3"
