@@ -3,10 +3,36 @@
 ALMP is free software for people who just want to press play. This roadmap shows where the project is heading.
 Plans can change - open an issue or a discussion if something matters to you.
 
+## Done (v8.1.0) - big playlists, settings, accessibility
+- [x] Virtual playlist (one list model, no item per file) and a streaming folder scan: the first track plays at once
+- [x] Search over a prepared index; natural sort ("2" before "10"); Play next; Move up/down; sort by name/folder
+- [x] Settings window (gear): contrast, interface size with "Apply now", video size, remove played (Off for new
+      installs), speed kept for the session, volume normaliser and 150% boost, subtitle size and box, media keys,
+      Run at Startup, default player and "Play with ALMP" on folders
+- [x] High contrast for every label and the welcome screen; control bar that fits 150-200% on small screens
+      (icons, two rows); accessible names; Space/arrows go to the focused control first
+- [x] Playlist and video right-click menus; Help and About (version, licence, log folder); version in the title
+- [x] Windows media controls (media keys in the background, title in the volume pop-up), with a safe fallback
+- [x] Sleep timer: end of track, fade-out, +15 min. Optional resume for files of 20+ minutes (off by default)
+- [x] `main.py` split into the `almp/` package; ruff in CI; tests run with real Qt on Linux and Windows
+- [x] Public benchmark (`tools/bench_playlist.py`) with measured numbers in the README
+- [x] Manual Windows test of the built exe (docs/MANUAL-TEST-v8.1.md) on a PC and an offline PC
+- [ ] winget / Scoop submission (drafts in `packaging/`)
+
+## Done (v8.0.1, shipped inside v8.1.0) - safety and reliability
+- [x] Delete warns clearly on drives without a Recycle Bin (USB sticks, memory cards, network drives)
+- [x] Removed the "Remember Playlist" checkbox that did not work; ALMP always starts clean and removes old v7 history files
+- [x] Errors are written to a local log file (`%LOCALAPPDATA%\ALMP\almp.log`) instead of closing ALMP
+- [x] Several files opened from Explorer at once all reach the same window; opening a file adds it instead of wiping the playlist
+- [x] Click-to-seek, Enter plays the selected item, visible keyboard focus, fullscreen pointer stays visible over dialogs
+- [x] Old "ANSI" `.m3u` playlists load correctly; licence texts included in the zip
+- [x] Build version comes from `main.py`; workflow inputs pinned
+- [x] High contrast on/off button on the control bar; three-way loop (Off / One / All, key `L`), not remembered between runs
+
 ## Done (v8.0.0)
 - [x] Starts clean: no remembered position or playlist, lower memory use
 - [x] Save playlist as M3U, sleep timer (pause or close), high-contrast theme
-- [x] Delete to the Recycle Bin; delete works in fullscreen without leaving it
+- [x] Delete to the Recycle Bin (on drives without one, a warning was added in v8.0.1); delete works in fullscreen without leaving it
 - [x] Previous goes back; first-run welcome screen
 - [x] Tested with a 10,000-file library and a 3,500-song real library
 - [x] Build and package scripts; GitHub Actions workflow (run by hand) with a pinned libmpv
@@ -17,22 +43,20 @@ Plans can change - open an issue or a discussion if something matters to you.
 - [x] Set-as-default script, single-window mode, remembered settings
 - [x] GPL-3.0 licence, third-party notices, honest documentation
 
-## Next: v8.1 - trust and polish
-- [ ] Code-signed Windows releases (free signing for open-source projects, see SIGNING.md)
-- [ ] First successful GitHub Actions build, then build releases only from Actions
-- [ ] Decide on the "Remember Playlist" option (make it work as a real choice, or remove it)
-- [ ] Tidy `main.py` (split into a few files, log errors to a file instead of hiding them)
-- [ ] Public benchmark results (use `tools/make_test_library.py`), including a 100,000-file playlist
-- [ ] A screenshot of a playing video and short how-to for the README
-
-## Then: v8.2+
-- [ ] Virtual playlist (100,000+ items without slowing down)
-- [ ] Subtitle and audio-track improvements
-- [ ] Re-order playlists
+## Next: v8.2 - trust and reach
+- [ ] Settings: make the window show the Windows options without scrolling on small screens (already moved up in 8.1)
+- [ ] Fullscreen start screen: larger buttons for TVs and big screens
+- [ ] Code signing: the free SignPath Foundation application was declined for now (not enough public visibility yet).
+      Grow the project's visibility and reapply later, or choose another route (see SIGNING.md)
+- [ ] Build releases only from Actions; attest builds (GitHub artifact attestations)
+- [ ] Host a copy of the exact libmpv/FFmpeg source next to each release (today: a written offer, see THIRD-PARTY-NOTICES.txt)
+- [ ] Microsoft Store (MSIX) listing; submit the winget and Scoop manifests
+- [ ] Translations: route all texts through one function, then community languages
+- [ ] Album art loaded off the window thread (slow USB/network drives)
+- [ ] "Keep on top" and a simple layout preset
 
 ## Later
-- [ ] Easier installation: winget, Microsoft Store, optional installer
-- [ ] Accessibility: large-text mode, screen-reader labels
+- [ ] Optional installer (after signing)
 - [ ] Translations by the community
 - [ ] Switch to PySide6 (LGPL) so the project can be offered under more permissive terms
 

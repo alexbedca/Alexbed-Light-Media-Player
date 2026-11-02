@@ -1,49 +1,67 @@
-# Builds the ALMP portable zip on GitHub's servers so the build is verifiable
-# (a SignPath Foundation requirement). Run it by hand: Actions > Build ALMP > Run workflow.
+# Builds the ALMP portable zip on GitHub's servers, so anyone can see exactly how a release was made.
+# Run it by hand: Actions > Build ALMP > Run workflow.
 #
-# libmpv is downloaded from a pinned release and checked against a SHA-256, so every build uses the same file.
-# Default pin: zhongfly/mpv-winbuild release 2026-10-23-1140d3cc29, file mpv-dev-x86_64-20261023-git-1140d3cc29.7z
-# (GPL build, 64-bit). To use a different build, set the repository variables LIBMPV_URL and LIBMPV_SHA256
-# (Settings > Secrets and variables > Actions > Variables); they override the defaults below.
+# - The version comes from __version__ in almp/__init__.py (checked: plain X.Y.Z only).
+# - libmpv is downloaded from ONE pinned release and checked against its SHA-256. The URL and hash
+#   are written here on purpose (no repository variables), so they can only change through a commit.
+#   Pin: zhongfly/mpv-winbuild release 2026-10-23-1140d3cc29, file mpv-dev-x86_64-20261023-git-1140d3cc29.7z
+#   (GPL build, 64-bit).
+# - Actions are pinned to full commit SHAs (the tag is in the comment).
+# - ALMP releases are currently NOT code-signed. This workflow does not sign anything.
 name: Build ALMP
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version number, e.g. 8.0.0"
-        required: true
-        default: "8.0.0"
 
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025
+    timeout-minutes: 60
     env:
-      VER: ${{ inputs.version }}
-      LIBMPV_URL: ${{ vars.LIBMPV_URL || 'https://github.com/zhongfly/mpv-winbuild/releases/download/2026-10-23-1140d3cc29/mpv-dev-x86_64-20261023-git-1140d3cc29.7z' }}
-      LIBMPV_SHA256: ${{ vars.LIBMPV_SHA256 || 'd4fb6d53979bd9e2e7e3f71e15e721a13c6515d9f32b294e46683de6a5ca9fda' }}
+      LIBMPV_URL: https://github.com/zhongfly/mpv-winbuild/releases/download/2026-10-23-1140d3cc29/mpv-dev-x86_64-20261023-git-1140d3cc29.7z
+      LIBMPV_SHA256: d4fb6d53979bd9e2e7e3f71e15e721a13c6515d9f32b294e46683de6a5ca9fda
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.13"
+
+      - name: Read and check the version from almp/__init__.py
+        shell: pwsh
+        run: |
+          $ver = (python tools/get_version.py).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "tools/get_version.py failed" }
+          if ($ver -cnotmatch '\A[0-9]+\.[0-9]+\.[0-9]+\z') { throw "Bad version: '$ver'" }
+          "VER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "Version: $ver" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt nuitka
+          pip install -r requirements.txt nuitka pytest ruff
+
+      - name: Code checks and tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ruff check .
+          python -m pytest -q tests
 
       - name: Get libmpv (pinned and checksum-verified)
         shell: pwsh
         run: |
-          if (-not $env:LIBMPV_URL -or -not $env:LIBMPV_SHA256) { throw "LIBMPV_URL / LIBMPV_SHA256 are empty." }
           New-Item -ItemType Directory -Force runtime, libmpv_tmp | Out-Null
-          $ext = [IO.Path]::GetExtension(($env:LIBMPV_URL -split '\?')[0])
-          $archive = "libmpv_tmp\libmpv$ext"
+          $archive = "libmpv_tmp\libmpv.7z"
           Invoke-WebRequest $env:LIBMPV_URL -OutFile $archive
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash
           if ($hash -ne $env:LIBMPV_SHA256.ToUpper()) { throw "libmpv checksum mismatch: $hash" }
@@ -51,7 +69,18 @@ jobs:
           $dll = Get-ChildItem libmpv_tmp\x -Recurse -Include libmpv-2.dll, mpv-2.dll | Select-Object -First 1
           if (-not $dll) { throw "No libmpv-2.dll / mpv-2.dll found in the archive" }
           Copy-Item $dll.FullName runtime\mpv-2.dll
-          "libmpv source: $env:LIBMPV_URL`nSHA-256: $hash" | Out-File release-libmpv.txt
+          $info = @(
+            "ALMP $env:VER - build information"
+            "Source commit: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$env:GITHUB_SHA"
+            "Built by: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            "libmpv source: $env:LIBMPV_URL"
+            "libmpv archive SHA-256: $hash"
+            "Python: $(python -VV)"
+            "Nuitka: $(python -m nuitka --version | Select-Object -First 1)"
+            ""
+            "Python packages:"
+          )
+          $info + (pip freeze) | Out-File BUILD-INFO.txt -Encoding utf8
 
       - name: Build with Nuitka
         shell: cmd
@@ -59,7 +88,7 @@ jobs:
           python -m nuitka --standalone --enable-plugin=pyqt6 --windows-console-mode=disable --lto=yes
           --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico
           --include-data-file=icon.png=icon.png --include-data-file=runtime/mpv-2.dll=runtime/mpv-2.dll
-          --output-filename=ALMP.exe --assume-yes-for-downloads --company-name=Alexbed
+          --include-package=almp --output-filename=ALMP.exe --assume-yes-for-downloads --company-name=Alexbed
           --product-name="Alexbed Light Media Player" --file-description="Alexbed Light Media Player"
           --file-version=%VER%.0 --product-version=%VER%.0 main.py
 
@@ -69,17 +98,16 @@ jobs:
           $name = "ALMP-v$env:VER-Portable"
           New-Item -ItemType Directory -Force "release\$name" | Out-Null
           Copy-Item main.dist\* "release\$name" -Recurse
-          Copy-Item LICENSE, README.txt, THIRD-PARTY-NOTICES.txt, Set-ALMP-Defaults.bat, Remove-ALMP-Defaults.bat, release-libmpv.txt "release\$name"
+          Copy-Item LICENSE, README.txt, THIRD-PARTY-NOTICES.txt, Set-ALMP-Defaults.bat, Remove-ALMP-Defaults.bat, BUILD-INFO.txt "release\$name"
+          Copy-Item LICENSES "release\$name\LICENSES" -Recurse
           Compress-Archive "release\$name" "release\$name.zip"
           $h = (Get-FileHash "release\$name.zip" -Algorithm SHA256).Hash
-          "$h  $name.zip" | Out-File "release\$name.sha256.txt"
-          "### SHA-256`n$h" >> $env:GITHUB_STEP_SUMMARY
+          "$h  $name.zip" | Out-File "release\$name.sha256.txt" -Encoding ascii
+          "### SHA-256`n$h  $name.zip" >> $env:GITHUB_STEP_SUMMARY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ALMP-portable
           path: |
             release/*.zip
             release/*.sha256.txt
-      # After SignPath approval: add the signpath/github-action-submit-signing-request step here,
-      # signing ALMP.exe and the other .exe files BEFORE the Package step.

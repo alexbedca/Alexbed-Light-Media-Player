@@ -9,6 +9,7 @@ nuitka-crash-report.xml
 
 # Python
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 venv/
@@ -17,6 +18,9 @@ venv/
 
 # The mpv library is downloaded separately (do not commit it)
 runtime/
+libmpv_tmp/
+BUILD-INFO.txt
+release-libmpv.txt
 
 # Editors / OS
 .vscode/
@@ -30,4 +34,5 @@ _backup/
 *.zip
 *.log
 _testmedia/
+_screenmedia/
 Test-Launch.bat

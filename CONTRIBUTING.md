@@ -13,7 +13,10 @@ Thank you for helping! ALMP is a small, free project built for people who want a
 1. Fork the repository and create a branch.
 2. Follow the "Run from source" steps in the [README](README.md).
 3. Keep changes small and focused. Please open an issue first for big changes.
-4. Test on Windows if you can. Run `python -m py_compile main.py` at the least.
+4. Test on Windows if you can. At the least run `pip install pytest ruff`, then `ruff check .` and
+   `python -m pytest tests` (no window opens; with PyQt6 installed the window tests run offscreen).
+   For playlist speed changes, compare `python tools/bench_playlist.py` before and after.
+   Keep decisions in the plain-logic modules of `almp/` (no Qt) and test them there.
 5. Open a pull request and describe what you changed and why.
 
 ## Design rules

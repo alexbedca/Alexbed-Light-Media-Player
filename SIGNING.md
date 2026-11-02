@@ -1,61 +1,59 @@
-# Code signing plan for ALMP
+# Code signing and ALMP
 
-ALMP is not code-signed yet, so Windows SmartScreen may warn on first run
-("More info" > "Run anyway"). The free route is the **SignPath Foundation**
-programme for open-source projects (https://signpath.org). This file is the
-checklist for getting there. Nothing here costs money.
+## Status (November 2026)
+
+**ALMP releases are not code-signed.** This includes v8.0.0 and v8.1.0.
+
+ALMP applied to the [SignPath Foundation](https://signpath.org) free code-signing programme for
+open-source projects. The application was **declined for now**, because the project does not yet
+have enough public visibility (for example users, stars, downloads, mentions elsewhere). This is about
+how well known the project is, not about the code. Reapplying later is possible, and other routes are
+listed below.
+
+## What this means for you
+
+- Windows SmartScreen may show **"Windows protected your PC"** the first time you start ALMP.
+  Click **More info**, then **Run anyway**. This warning appears for most new free programs that are
+  not signed. It does not mean a virus was found.
+- Only download ALMP from the project's
+  [Releases page](https://github.com/alexbedca/Alexbed-Light-Media-Player/releases).
+- Check the download before you run it. Every release page lists the SHA-256 checksum of the zip.
+  In the folder with the zip, open PowerShell and run:
+
+  ```powershell
+  Get-FileHash .\ALMP-v8.1.0-Portable.zip -Algorithm SHA256
+  ```
+
+  or, in Command Prompt: `certutil -hashfile ALMP-v8.1.0-Portable.zip SHA256`.
+  The long code must be **exactly** the same as on the release page (capital or small letters do not
+  matter). If it is different, delete the file and do not run it.
+- Builds made by GitHub Actions also contain `BUILD-INFO.txt`, which names the source commit and the
+  workflow run that made the zip, so anyone can see how it was built.
 
 ## Why not self-sign?
 A self-signed certificate is not trusted by other computers, so it changes nothing for users.
-A real certificate from a public authority costs money every year. SignPath Foundation
-provides one for free to qualifying open-source projects.
+A certificate from a public authority costs money every year.
 
-## SignPath Foundation requirements (checked November 2026 - confirm on signpath.org/terms)
+## Options that are still open
 
-| Requirement | ALMP status |
-|---|---|
-| OSI-approved licence for all components, no commercial dual licensing | OK: GPL-3.0-or-later |
-| Source repository owned by the team that signs | OK: github.com/alexbedca/Alexbed-Light-Media-Player |
-| Actively maintained, already released in the form to be signed | OK (v7.2.0 released; v8.0.0 is the first release to sign) |
-| Binaries built from source in a **verifiable** way | TODO: build on GitHub Actions (see `.github/workflows/build.yml`) |
-| Manual approval of every signing request | Will be set up in SignPath |
-| Product name and version set in the .exe and consistent | OK: build command sets them (`--product-name`, `--product-version`) |
-| "Code signing policy" section on README and release pages | TODO: paste the text below after approval |
-| Multi-factor authentication for GitHub and SignPath | TODO: check GitHub > Settings > Password and authentication |
-| No hidden data collection; system changes announced | OK: ALMP is offline; startup and default-app changes are opt-in |
-| Uninstall available | OK: portable app; `Remove-ALMP-Defaults.bat` undoes file associations |
+| Option | Cost | Notes |
+|---|---|---|
+| Reapply to SignPath Foundation later | Free for open source | Needs more public visibility first. The rest is ready: OSI licence (GPL-3.0-or-later), public repository, a released product, and a GitHub Actions build with pinned inputs. |
+| SignPath (paid plan) | Paid | Same tooling, without the Foundation's visibility requirement. Check current prices on signpath.io. |
+| Azure Artifact Signing (Microsoft) | Monthly fee | Identity checks take days and eligibility for individuals is limited by country; check Microsoft's current terms. |
+| Microsoft Store (MSIX) | Free for individual developers | Needs MSIX packaging and identity verification by the owner. Microsoft signs the package. A good second channel. |
+| Self-signed | Free | Not useful: other PCs do not trust it. |
 
-## Steps
+SmartScreen reputation also grows with downloads over time, even for signed files.
 
-1. Turn on two-factor authentication for GitHub (done).
-2. Publish v8.0.0 (unsigned) so the project "is already released".
-3. Make the build reproducible on GitHub Actions (finish `.github/workflows/build.yml`: set the two libmpv variables and run it once). The workflow must download libmpv
-   from a pinned, public release and record its version.
-4. Apply at https://signpath.org/apply with the repository link.
-5. When approved, add the SignPath step to the workflow, set yourself as author and approver.
-6. Add the policy text below to README.md and to each release page.
-7. Release: workflow builds, SignPath asks you to approve, signed zip is published.
-
-## Policy text to add after approval
-
-> **Code signing policy**
-> Free code signing provided by [SignPath.io](https://signpath.io), certificate by
-> [SignPath Foundation](https://signpath.org).
-> Roles: Author, reviewer and approver: Alexbed ([@alexbedca](https://github.com/alexbedca)).
-> Privacy: ALMP works fully offline and sends no data anywhere.
+## If ALMP reapplies to SignPath Foundation
+- Sign `ALMP.exe` only. Every other file in the zip (Qt/PyQt6 DLLs, Python, `mpv-2.dll`, the VC++
+  runtime) is third-party and is shipped unchanged and unsigned.
+- Add the signing step to `.github/workflows/build.yml` only after approval, with the API token in a
+  protected GitHub Environment that needs the owner's approval.
+- Only then add a "Code signing policy" section to the README and release pages. Until a certificate is
+  actually in use, no ALMP page should say that releases are signed.
 
 ## Until then
-- Publish the SHA-256 of every zip in the release notes so users can verify the download.
-- Keep the Python version used for the build in the release notes.
-
-## Other options we looked at
-| Option | Cost | Verdict |
-|---|---|---|
-| SignPath Foundation | Free for open source | Best fit. Needs a verifiable CI build, a released product and an application; approval is by people, so it takes days. |
-| Azure Artifact Signing (Microsoft) | About US$9.99/month | Individuals only in USA/Canada; identity checks take days. Does not give instant SmartScreen trust. |
-| Microsoft Store (MSIX) | Free for individuals | Needs MSIX packaging and ID + selfie verification done by the owner personally. Microsoft signs the package. A good second channel later. |
-| Self-signed | Free | Useless: other PCs do not trust it. |
-
-Why it cannot be done "today": the free certificate is issued after SignPath reviews the project, and the
-review wants a build made by GitHub's servers, not on a personal PC. Reputation with SmartScreen also grows
-with downloads, even for signed files.
+- Publish the SHA-256 of every zip in the release notes.
+- Prefer zips built by GitHub Actions (they include `BUILD-INFO.txt`).
