@@ -2349,15 +2349,20 @@ class MediaWindow(QMainWindow):
 
     def _toggle_fullscreen(self):
         if self._is_fullscreen:
-            self.showNormal()
-            self._is_fullscreen = False
-            self._exit_fullscreen_ui()
+            # One state change only: showNormal() straight followed by showMaximized() could leave
+            # the window without its title bar on Windows.
             if self._pre_fs_maximized:
                 self.showMaximized()
-            elif self._pre_fs_geometry is not None:
-                self.setGeometry(self._pre_fs_geometry)
             else:
-                self._size_to_screen()
+                self.showNormal()
+            self._is_fullscreen = False
+            self._exit_fullscreen_ui()
+            if not self._pre_fs_maximized:
+                if self._pre_fs_geometry is not None:
+                    self.setGeometry(self._pre_fs_geometry)
+                else:
+                    self._size_to_screen()
+            QTimer.singleShot(250, self._check_window_frame)
             self._show_cursor()
             self.hide_timer.stop()
             self.fullscreen_title_label.hide()
@@ -2379,6 +2384,16 @@ class MediaWindow(QMainWindow):
         self._apply_tv_mode()
         QTimer.singleShot(0, self._layout_overlay)
         self.video.setFocus()
+
+    def _check_window_frame(self):
+        """Safety net after leaving fullscreen: bring the title bar back if Windows dropped it."""
+        if self._is_fullscreen or self._closing:
+            return
+        try:
+            if pw.restore_window_frame(int(self.winId())):
+                log.info("Title bar was missing after leaving fullscreen; restored it")
+        except (RuntimeError, TypeError):
+            pass
 
     def _apply_tv_mode(self):
         """Bigger start screen in fullscreen on a TV or big screen (Settings > Large start screen)."""

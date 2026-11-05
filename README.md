@@ -14,7 +14,10 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.1 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+
+**New in 8.2.1:** the window's title bar no longer goes missing after you leave fullscreen.
+See the [release notes](docs/release-notes/v8.2.1.md).
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
 and it is not a commercial product.
@@ -76,8 +79,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.2.0-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.0-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.2.1-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.1-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
