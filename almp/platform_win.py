@@ -142,6 +142,33 @@ def set_app_user_model_id():
         return False
 
 
+# --- Window frame after fullscreen ---
+# Leaving fullscreen, Windows sometimes leaves the window without its title bar and borders.
+GWL_STYLE = -16
+WS_CAPTION = 0x00C00000
+WS_FRAME_BITS = 0x00CF0000          # WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+SWP_NOSIZE, SWP_NOMOVE, SWP_NOZORDER, SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x1, 0x2, 0x4, 0x10, 0x20
+
+
+def restore_window_frame(hwnd):
+    """Put the title bar back if Windows lost it. True when something had to be repaired."""
+    if sys.platform != "win32" or not hwnd:
+        return False
+    try:
+        user32 = ctypes.windll.user32
+        user32.GetWindowLongW.restype = ctypes.c_long
+        style = user32.GetWindowLongW(wintypes.HWND(hwnd), GWL_STYLE)
+        if style & WS_CAPTION == WS_CAPTION:
+            return False
+        user32.SetWindowLongW(wintypes.HWND(hwnd), GWL_STYLE, ctypes.c_long(style | WS_FRAME_BITS))
+        user32.SetWindowPos(wintypes.HWND(hwnd), None, 0, 0, 0, 0,
+                            SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
+        return True
+    except Exception:          # noqa: BLE001
+        log.debug("Could not restore the window frame", exc_info=True)
+        return False
+
+
 def windows_dir():
     return os.environ.get("SystemRoot") or os.environ.get("windir") or r"C:\Windows"
 

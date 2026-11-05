@@ -3,6 +3,9 @@
 ALMP is free software for people who just want to press play. This roadmap shows where the project is heading.
 Plans can change - open an issue or a discussion if something matters to you.
 
+## Done (v8.2.1) - fullscreen fix
+- [x] The title bar (minimise, maximise, close) is always back after leaving fullscreen
+
 ## Done (v8.2.0) - TV-size start screen
 - [x] In fullscreen the start screen (logo, text, Add Files / Add Folder) scales with the screen height, so it is easy
       to read and click on a TV or big monitor. Setting: *Start screen in fullscreen* = Automatic / Always big / Never
