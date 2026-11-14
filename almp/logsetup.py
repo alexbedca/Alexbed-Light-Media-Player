@@ -10,15 +10,21 @@ import contextlib
 import logging
 import logging.handlers
 import sys
+import time
 import traceback
 
 from . import __version__
 from .paths import get_log_dir
 
 log = logging.getLogger("almp")
+STARTED_AT = time.perf_counter()     # for the start-up times written to almp.log
 log.addHandler(logging.NullHandler())
 
 _notify = None          # callable(str) set once the window exists
+
+
+def seconds_since_start():
+    return time.perf_counter() - STARTED_AT
 
 
 def set_exception_notify(func):

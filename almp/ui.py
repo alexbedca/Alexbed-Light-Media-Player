@@ -80,7 +80,7 @@ from .logic import (
     tv_scale,
     update_resume_table,
 )
-from .logsetup import log
+from .logsetup import log, seconds_since_start
 from .media import (
     AUDIO_EXTENSIONS,
     PLAYLIST_EXTENSIONS,
@@ -349,12 +349,15 @@ class MediaWindow(QMainWindow):
             pass
 
     # ------------------------------------------------------------------ files from Explorer
-    def open_external(self, paths):
+    def open_external(self, paths, wait_ms=250):
+        """Files from Explorer. Files handed over by a second ALMP wait 250 ms so a burst of them
+        (several files opened together) is gathered first; the files ALMP was started with
+        (wait_ms=0) start at once."""
         if not paths:
             self._bring_to_front()
             return
         self._ext_queue.extend(paths)
-        QTimer.singleShot(250, self._drain_external)
+        QTimer.singleShot(wait_ms, self._drain_external)
 
     def _drain_external(self):
         if not self._ext_queue:
@@ -815,22 +818,29 @@ class MediaWindow(QMainWindow):
 
         def label(t):
             title, lang = tv(t, "title"), tv(t, "lang")
-            text = f"{title} ({lang})" if title and lang else (title or lang or f"Track {tv(t, 'id')}")
-            return ("✓  " if tv(t, "selected") else "      ") + str(text)
+            return str(f"{title} ({lang})" if title and lang else (title or lang or f"Track {tv(t, 'id')}"))
+
+        def add_choice(sub, text, selected, on_pick):
+            # Qt draws the check mark itself. The check-mark character (U+2713) is not in Segoe UI,
+            # and looking for a font that has it froze the menu for 6 s on a PC with thousands of fonts.
+            act = sub.addAction(text)
+            act.setCheckable(True)
+            act.setChecked(bool(selected))
+            act.triggered.connect(lambda checked=False: on_pick())
+            return act
 
         if audio_tracks:
             audio_menu = menu.addMenu("Audio tracks")
             for t in audio_tracks:
-                act = audio_menu.addAction(label(t))
-                act.triggered.connect(lambda checked=False, tid=tv(t, "id"): self._safe_set_mpv_prop("aid", tid))
+                add_choice(audio_menu, label(t), tv(t, "selected"),
+                           lambda tid=tv(t, "id"): self._safe_set_mpv_prop("aid", tid))
         sub_menu = menu.addMenu("Subtitles")
         if sub_tracks:
             any_selected = any(tv(t, "selected") for t in sub_tracks)
-            act = sub_menu.addAction(("      " if any_selected else "✓  ") + "Off")
-            act.triggered.connect(lambda checked=False: self._safe_set_mpv_prop("sid", "no"))
+            add_choice(sub_menu, "Off", not any_selected, lambda: self._safe_set_mpv_prop("sid", "no"))
             for t in sub_tracks:
-                act = sub_menu.addAction(label(t))
-                act.triggered.connect(lambda checked=False, tid=tv(t, "id"): self._safe_set_mpv_prop("sid", tid))
+                add_choice(sub_menu, label(t), tv(t, "selected"),
+                           lambda tid=tv(t, "id"): self._safe_set_mpv_prop("sid", tid))
             sub_menu.addSeparator()
         sub_menu.addAction("Load subtitle file...", self.load_external_subtitle)
         sub_menu.addAction("Subtitle size and box (Settings)...", self.show_settings)
@@ -1699,6 +1709,16 @@ class MediaWindow(QMainWindow):
             @self.player.event_callback("end-file")
             def handle_end_file(event):
                 self._bridge.end_file.emit(get_mpv_end_reason(event))
+
+            first_picture = {"logged": False}
+
+            @self.player.event_callback("playback-restart")
+            def handle_playback_restart(_event):
+                # Written once per start, so a slow start can be seen in almp.log
+                # (tools/bench_startup.py reads it too).
+                if not first_picture["logged"]:
+                    first_picture["logged"] = True
+                    log.info("Start-up: playing after %.1f s", seconds_since_start())
 
             if s["normalize_volume"]:
                 set_audio_filter(self.player, True)
