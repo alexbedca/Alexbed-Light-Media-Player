@@ -236,6 +236,25 @@ def test_high_contrast_applies_live(window, qapp):
     assert "#ffff00" not in qapp.styleSheet()
 
 
+def test_track_menus_use_real_check_marks(window, qapp):
+    from PyQt6.QtWidgets import QMenu
+    window.player.track_list = [
+        {"type": "audio", "id": 1, "selected": True, "title": "Main", "lang": "eng"},
+        {"type": "audio", "id": 2, "selected": False, "lang": "fra"},
+        {"type": "sub", "id": 3, "selected": False, "lang": "eng"},
+    ]
+    menu = QMenu()
+    window._fill_tracks_menu(menu)
+    subs = {a.text(): a.menu() for a in menu.actions() if a.menu()}
+    audio = {a.text(): a.isChecked() for a in subs["Audio tracks"].actions()}
+    assert audio == {"Main (eng)": True, "fra": False}
+    subtitle = {a.text(): a.isChecked() for a in subs["Subtitles"].actions() if a.isCheckable()}
+    assert subtitle == {"Off": True, "eng": False}
+    sub_eng = next(a for a in subs["Subtitles"].actions() if a.text() == "eng")
+    sub_eng.trigger()
+    assert window.player.sid == 3
+
+
 def test_every_button_has_an_accessible_name(window):
     from PyQt6.QtWidgets import QAbstractButton, QComboBox, QLineEdit, QSlider
     missing = []

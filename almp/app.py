@@ -10,13 +10,28 @@ import sys
 
 from . import __version__
 from . import platform_win as pw
-from .logsetup import install_hooks, log, set_exception_notify, setup_logging
+from .logsetup import install_hooks, log, seconds_since_start, set_exception_notify, setup_logging
 from .paths import SOURCE_ROOT, get_app_icon_path, is_compiled
 from .settings import effective_settings, load_settings, migrate_settings_file, remove_legacy_history_files
 
 # --- Linux: embed mpv through X11 ---
 if sys.platform.startswith("linux") and "QT_QPA_PLATFORM" not in os.environ and os.environ.get("DISPLAY"):
     os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+
+# Qt 6.8+ reads the font list through DirectWrite, which opens every installed font the first time
+# any text is measured. On a PC with 9,223 fonts that took 5 to 70 s before the window appeared.
+# Qt's older GDI font list (its default up to Qt 6.7) lists the same fonts in about 0.05 s.
+WINDOWS_QT_PLATFORM = "windows:fontengine=gdi"
+
+
+def qt_platform_override(environ, platform=None):
+    """The QT_QPA_PLATFORM value ALMP sets before Qt starts, or None to leave it alone.
+    A value the user set themselves always wins."""
+    platform = sys.platform if platform is None else platform
+    if platform != "win32" or environ.get("QT_QPA_PLATFORM"):
+        return None
+    return WINDOWS_QT_PLATFORM
 
 
 def _add_runtime_to_path():
@@ -104,6 +119,9 @@ def main(argv=None):
         except ValueError:
             scale = 1.0
 
+    qpa = qt_platform_override(os.environ)
+    if qpa:
+        os.environ["QT_QPA_PLATFORM"] = qpa
     app = QApplication(argv)
     app.setApplicationName("ALMP")
     app.setApplicationVersion(__version__)
@@ -146,8 +164,9 @@ def main(argv=None):
     set_exception_notify(window.notify_error)
 
     window.show()
+    log.info("Start-up: window shown after %.1f s", seconds_since_start())
     if cli_paths:
-        window.open_external(cli_paths)
+        window.open_external(cli_paths, wait_ms=0)
     window.attach_ipc_server(ipc)
     rc = app.exec()
     restart = window._restart_requested

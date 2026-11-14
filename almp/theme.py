@@ -27,6 +27,15 @@ elif sys.platform == "darwin":
 else:
     UI_FONT_FAMILY = '"Ubuntu", "Noto Sans", "DejaVu Sans"'
 
+# Semi-bold text. On Windows "Segoe UI" itself only has regular and bold; asking it for weight 600
+# makes Qt search every installed font for a better match. On a PC with thousands of fonts that
+# took 6 s at every start (measured: 9,223 fonts). Naming the "Segoe UI Semibold" face directly
+# gives the same look at once.
+if sys.platform == "win32":
+    SEMIBOLD = 'font-family: "Segoe UI Semibold"; font-weight: 600'
+else:
+    SEMIBOLD = "font-weight: 600"
+
 
 def accent(high_contrast):
     return ACCENT_HC if high_contrast else ACCENT
@@ -48,7 +57,7 @@ BASE_QSS = """
     #welcomePrimary:hover { background-color: #3ad8f2; }
     #welcomePrimary:pressed { background-color: #12a9c3; }
     #welcomeSecondary {
-        font-size: 16px; font-weight: 600; padding: 13px 30px; border-radius: 10px;
+        font-size: 16px; {SEMIBOLD}; padding: 13px 30px; border-radius: 10px;
         background-color: rgba(255, 255, 255, 16); color: #e6f7fa; border: 1px solid rgba(25, 200, 230, 130);
     }
     #welcomeSecondary:hover { background-color: rgba(25, 200, 230, 46); border-color: #19c8e6; }
@@ -67,12 +76,12 @@ BASE_QSS = """
     QSplitter::handle { background-color: #242424; width: 2px; }
     QSplitter::handle:hover { background-color: #19c8e6; }
 
-    #statusLabel { font-weight: 600; color: #d5dde0; }
+    #statusLabel { {SEMIBOLD}; color: #d5dde0; }
     #timeLabel { font-size: 13px; color: #9aa4a8; }
     #volumeValue { color: #9aa4a8; font-size: 13px; }
     #dimLabel { color: #9aa4a8; font-size: 13px; }
     #sectionTitle { font-size: 16px; font-weight: 700; color: #f1f4f5; padding-top: 6px; }
-    #playlistTitle { font-size: 18px; font-weight: 600; color: #f1f4f5; }
+    #playlistTitle { font-size: 18px; {SEMIBOLD}; color: #f1f4f5; }
     #countPill {
         background-color: #1f2a2d; color: #19c8e6; border-radius: 13px; padding: 5px 14px;
         font-size: 14px; font-weight: 700;
@@ -88,7 +97,7 @@ BASE_QSS = """
     QPushButton:hover { background-color: #2c2c2c; border-color: #19c8e6; }
     QPushButton:pressed { background-color: #1a1a1a; }
     QPushButton:disabled { color: #666666; border-color: #262626; }
-    #transportButton { font-size: 15px; padding: 9px 16px; font-weight: 600; }
+    #transportButton { font-size: 15px; padding: 9px 16px; {SEMIBOLD}; }
     #removeButton { color: #ffb86b; }
     #dangerButton { color: #ff6b6b; font-weight: bold; }
     #closeButton:hover { background-color: #c42b1c; border-color: #c42b1c; }
@@ -160,7 +169,7 @@ HIGH_CONTRAST_QSS = """
     #welcomeTitle, #welcomeTagline, #welcomeHint, #dialogMessage, #helpText { color: #ffffff; }
     #countPill { background-color: #000000; color: #ffff00; border: 2px solid #ffff00; }
     QPushButton, #transportButton, #removeButton, #dangerButton, #dialogButton {
-        background-color: #000000; border: 2px solid #ffffff; color: #ffffff; font-weight: 600;
+        background-color: #000000; border: 2px solid #ffffff; color: #ffffff; {SEMIBOLD};
     }
     QPushButton:hover { border-color: #ffff00; color: #ffff00; }
     QPushButton:disabled { color: #bdbdbd; border-color: #bdbdbd; }
@@ -193,11 +202,11 @@ HIGH_CONTRAST_QSS = """
 
 
 def base_stylesheet():
-    return BASE_QSS.replace("{UI_FONT_FAMILY}", UI_FONT_FAMILY)
+    return BASE_QSS.replace("{UI_FONT_FAMILY}", UI_FONT_FAMILY).replace("{SEMIBOLD}", SEMIBOLD)
 
 
 def stylesheet(high_contrast):
-    return base_stylesheet() + (HIGH_CONTRAST_QSS if high_contrast else "")
+    return base_stylesheet() + (HIGH_CONTRAST_QSS.replace("{SEMIBOLD}", SEMIBOLD) if high_contrast else "")
 
 
 # --- Crisp vector icons ---
