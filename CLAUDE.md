@@ -5,7 +5,7 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.1 released 2026-11-05 (Latest). Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
+- **Status:** v8.2.2 released 2026-11-14 (Latest; start-up speed fix). Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
   (GPL-3.0-or-later). Release asset: `ALMP-vX.Y.Z-Portable.zip` + SHA-256. Not code-signed (SignPath declined
   for now; see `SIGNING.md`).
 - **Next:** see `ROADMAP.md` (open items: bigger fullscreen drawer/text for TVs, winget/Scoop submission from
@@ -22,7 +22,8 @@ almp/                     logic.py, store.py, naturalsort.py, settings.py, media
                           playlist_model.py, player.py (mpv options), ui.py / widgets.py / dialogs.py (window),
                           platform_win.py + smtc.py (Windows-only calls, all guarded), ipc.py (single instance)
 tests/                    pytest; Qt window tests run offscreen with mpv replaced by a stand-in
-tools/                    bench_playlist.py (public benchmark), make_test_library.py, get_version.py
+tools/                    bench_playlist.py (public benchmark), bench_startup.py (open-time benchmark),
+                          make_test_library.py, get_version.py
 packaging/                winget + Scoop drafts (not submitted)
 runtime/mpv-2.dll         libmpv, NOT committed (git-ignored); needed to run and build
 Build-ALMP.bat            Nuitka build -> main.dist\ (log: build.log)
@@ -37,6 +38,8 @@ Set-/Remove-ALMP-Defaults.bat  shipped in the zip: default-player registration /
 - Run: `python main.py` (needs `runtime\mpv-2.dll`).
 - Tests and lint: `python -m pytest tests` and `ruff check .` (config in `ruff.toml`).
 - Benchmark: `python tools/bench_playlist.py --sizes 100000,250000 --disk-sizes 100000 --json my-pc.json`.
+- Open time: `python tools/bench_startup.py <video> [--exe main.dist\ALMP.exe] [--runs 5]` (close ALMP first;
+  reads the "Start-up: window shown / playing after" lines in `%LOCALAPPDATA%\ALMP\almp.log`).
 - Build: `pip install nuitka`, then `Build-ALMP.bat`, then `Package-ALMP.bat`.
 
 **Skills**
@@ -52,6 +55,14 @@ Set-/Remove-ALMP-Defaults.bat  shipped in the zip: default-player registration /
 - Claude in Chrome for GitHub web-only settings (social preview).
 
 ## Decisions and gotchas
+- **Fonts and start-up speed (v8.2.2):** Alexander's PC has 9,223 fonts. Qt searches *all* installed fonts for
+  (1) its DirectWrite font list, (2) a weight the family lacks, (3) a character the font lacks; each cost
+  5-70 s there. So: ALMP sets `QT_QPA_PLATFORM=windows:fontengine=gdi` (unless the user set it), semi-bold uses
+  `SEMIBOLD` in `theme.py` ("Segoe UI Semibold" by name, never bare `font-weight: 600` on Windows), and window
+  text must not use symbols Segoe UI lacks (no "✓"; use checkable actions). Re-measure with
+  `tools/bench_startup.py` after UI/font changes; target: window ~1 s, video playing ~1.5-2 s.
+- Known quirk (not fixed): right after ALMP is force-killed, a new start within ~1-2 s can find the stale
+  single-instance lock and hand its file to nothing (normal close is fine).
 - Performance claims must match `tools/bench_playlist.py` runs; the README states where targets were **not** met
   (window stall 61–148 ms during a 100,000-file scan). Keep that honesty when updating numbers.
 - The playlist is a one-column table, not `QListView` (measured ~30× faster to append rows).
