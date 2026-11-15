@@ -82,7 +82,10 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Tick **"Play with ALMP"** for folders. Right-click a music folder in Explorer: "Play with ALMP"
       (Windows 11: under "Show more options"). It opens ALMP and starts the first track of that folder,
       also when ALMP is already open with another playlist.
-- [ ] Untick it: the menu entry is gone. **Remove ALMP from Default apps**: ALMP disappears from Default apps.
+- [ ] v8.2.3: with the box ticked, select 5 songs in Explorer, right-click > **Play with ALMP**: one ALMP
+      window, all 5 in the playlist, one plays. With ALMP playing, select more files > **Add to ALMP
+      playlist**: they are added and the current track keeps playing.
+- [ ] Untick it: the menu entries are gone (folders and files). **Remove ALMP from Default apps**: ALMP disappears from Default apps.
 - [ ] `Remove-ALMP-Defaults.bat` still removes everything, including the folder entry.
 
 ## 6. Media keys and Windows media controls (SMTC)

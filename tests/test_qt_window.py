@@ -338,3 +338,106 @@ def test_start_screen_gets_bigger_in_fullscreen_only(window, qapp):
     window._is_fullscreen = False
     window.set_large_buttons("auto")
     assert w.btn_files.minimumHeight() == base
+
+
+# --- fullscreen (see tests/test_fullscreen.py and almp/titlefonts.py) ---
+def test_fullscreen_bar_has_room_for_three_buttons_in_every_layout(qapp, window):
+    window._toggle_fullscreen()
+    try:
+        for mode in ("wide", "compact", "narrow"):
+            window._apply_bar_mode(mode)
+            assert window.right_box.maximumWidth() >= 3 * 44 + 16, mode
+            for b in (window.playlist_toggle_button, window.fullscreen_button, window.fs_close_button):
+                assert not b.isHidden(), (mode, b.accessibleName())
+    finally:
+        window._toggle_fullscreen()
+    window._apply_bar_mode("compact")
+    assert window.right_box.maximumWidth() == 130          # windowed: one button, unchanged
+
+
+def test_always_play_videos_in_fullscreen(qapp, window, tmp_path):
+    video, song = tmp_path / "clip.mp4", tmp_path / "song.mp3"
+    video.write_bytes(b"")
+    song.write_bytes(b"")
+    window.settings["play_fullscreen"] = True
+    window.open_external([str(song)], wait_ms=0)
+    assert pump(qapp, lambda: window.player.loaded)
+    assert not window._is_fullscreen                        # music is not affected
+    window._last_ext_time = 0.0                             # a new double-click, not part of a burst
+    window.open_external([str(video)], wait_ms=0)
+    assert pump(qapp, lambda: len(window.player.loaded) >= 2)
+    assert window._is_fullscreen
+    window._toggle_fullscreen()
+
+
+def test_videos_stay_windowed_when_the_setting_is_off(qapp, window, tmp_path):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"")
+    assert window.settings["play_fullscreen"] is False
+    window.open_external([str(video)], wait_ms=0)
+    assert pump(qapp, lambda: window.player.loaded)
+    assert not window._is_fullscreen
+
+
+# --- playlist panel when ALMP is opened with one file ---
+def test_one_file_opens_without_the_playlist_panel_and_it_returns_at_two(qapp, window, tmp_path):
+    a, b = tmp_path / "a.mp4", tmp_path / "b.mp4"
+    a.write_bytes(b"")
+    b.write_bytes(b"")
+    window.set_playlist_panel(False, auto=True)            # what app.py does for one double-clicked file
+    window.open_external([str(a)], wait_ms=0)
+    assert pump(qapp, lambda: window.player.loaded)
+    assert window.right_panel.isHidden()
+    assert window.playlist_toggle_button.isVisible()        # the way back to the list
+    window.open_external([str(b)], wait_ms=0)               # a second file arrives
+    assert pump(qapp, lambda: len(window.store) == 2)
+    assert not window.right_panel.isHidden()
+
+
+def test_playlist_panel_can_be_toggled_in_a_normal_window(qapp, window):
+    assert not window.right_panel.isHidden()
+    window._toggle_fs_playlist()
+    assert window.right_panel.isHidden()
+    window._toggle_fs_playlist()
+    assert not window.right_panel.isHidden()
+
+
+def test_panel_hidden_by_hand_stays_hidden_when_files_are_added(qapp, window, tmp_path):
+    window.set_playlist_panel(False)                        # the user's own choice, not automatic
+    for n in ("a.mp4", "b.mp4"):
+        (tmp_path / n).write_bytes(b"")
+    window.open_external([str(tmp_path / "a.mp4"), str(tmp_path / "b.mp4")], wait_ms=0)
+    assert pump(qapp, lambda: len(window.store) == 2)
+    assert window.right_panel.isHidden()
+
+
+def test_leaving_fullscreen_keeps_the_panel_choice(qapp, window):
+    window.set_playlist_panel(False)
+    window._toggle_fullscreen()
+    window._toggle_fullscreen()
+    assert window.right_panel.isHidden()
+    window.set_playlist_panel(True)
+    window._toggle_fullscreen()
+    window._toggle_fullscreen()
+    assert not window.right_panel.isHidden()
+
+
+# --- "Add to ALMP playlist" from the right-click menu ---
+def test_add_to_playlist_does_not_interrupt_the_current_track(qapp, window, tmp_path):
+    first, more = tmp_path / "first.mp3", tmp_path / "more.mp3"
+    first.write_bytes(b"")
+    more.write_bytes(b"")
+    window.open_external([str(first)], wait_ms=0)
+    assert pump(qapp, lambda: window.player.loaded)
+    window._last_ext_time = 0.0                              # a new right-click, not part of a burst
+    window.open_external(["--add", str(more)], wait_ms=0)
+    assert pump(qapp, lambda: len(window.store) == 2)
+    assert len(window.player.loaded) == 1                    # still playing the first file
+    assert window.current_path == str(first)
+
+
+def test_add_to_playlist_plays_when_nothing_is_playing(qapp, window, tmp_path):
+    song = tmp_path / "song.mp3"
+    song.write_bytes(b"")
+    window.open_external(["--add", str(song)], wait_ms=0)
+    assert pump(qapp, lambda: window.player.loaded)

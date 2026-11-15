@@ -40,7 +40,7 @@ KEYBOARD_ROWS = [
     ("A", "Video size: Fit, Fill, Stretch"),
     ("S", "Save a picture of the video (in your Pictures folder)"),
     ("L", "Loop: Off, One (this track), All (whole playlist). Always Off when ALMP starts."),
-    ("P", "Playlist drawer (in fullscreen)"),
+    ("P", "Show / hide the playlist"),
     ("Ctrl+F", "Search the playlist"),
     ("Ctrl+O / Ctrl+Shift+O", "Add files / add a folder"),
     ("Ctrl+,", "Settings"),
@@ -314,7 +314,10 @@ class SettingsDialog(QDialog):
         row.addWidget(self.undo_default)
         row.addStretch(1)
         lay.addLayout(row)
-        self.folder_verb = QCheckBox('Show "Play with ALMP" when I right-click a folder in Explorer')
+        self.folder_verb = QCheckBox('Show "Play with ALMP" and "Add to ALMP playlist" when I right-click '
+                                     'files or a folder in Explorer')
+        self.folder_verb.setToolTip("Works with one or many selected audio and video files.\n"
+                                    'On Windows 11 they are under "Show more options" (or press Shift+F10).')
         self.folder_verb.setEnabled(can_reg)
         self.folder_verb.setChecked(win.folder_verb_installed())
         self.folder_verb.toggled.connect(self._folder_verb_toggled)
@@ -341,6 +344,13 @@ class SettingsDialog(QDialog):
         row.addWidget(lbl)
         row.addWidget(self.video_size, 1)
         lay.addLayout(row)
+
+        self.play_fullscreen = QCheckBox("Always play videos in fullscreen")
+        self.play_fullscreen.setChecked(bool(s["play_fullscreen"]))
+        self.play_fullscreen.setToolTip("Every video starts in fullscreen. Esc leaves fullscreen for that video;\n"
+                                        "the next video starts in fullscreen again. Music is not affected.")
+        self.play_fullscreen.toggled.connect(lambda v: win.set_simple_setting("play_fullscreen", v))
+        lay.addWidget(self.play_fullscreen)
 
         self.remove_played = QCheckBox("Remove each track from the list after it has played")
         self.remove_played.setChecked(win.remove_played_checkbox.isChecked())

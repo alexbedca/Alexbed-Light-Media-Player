@@ -100,7 +100,9 @@ def main(argv=None):
     if not lock_file.tryLock(100):
         # ALMP is already open (or still opening): hand our files to it, then quit.
         _qc = QCoreApplication(argv)  # noqa: F841
-        if not send_paths_to_running_instance(cli_paths):
+        # "Add to ALMP playlist" (right-click menu): tell the running ALMP not to interrupt what plays.
+        message = ([pw.ADD_FLAG] if pw.ADD_FLAG in argv[1:] else []) + cli_paths
+        if not send_paths_to_running_instance(message):
             log.warning("Could not reach the running ALMP; %d file(s) were not passed on", len(cli_paths))
         return 0
 
@@ -165,7 +167,12 @@ def main(argv=None):
 
     window.show()
     log.info("Start-up: window shown after %.1f s", seconds_since_start())
+    if qpa or "fontengine=gdi" in os.environ.get("QT_QPA_PLATFORM", ""):
+        from .titlefonts import register_thin_title_fonts
+        log.debug("Thin title-bar fonts added: %s", register_thin_title_fonts())
     if cli_paths:
+        if len(cli_paths) == 1 and os.path.isfile(cli_paths[0]):
+            window.set_playlist_panel(False, auto=True)     # one file double-clicked: all room for the video
         window.open_external(cli_paths, wait_ms=0)
     window.attach_ipc_server(ipc)
     rc = app.exec()

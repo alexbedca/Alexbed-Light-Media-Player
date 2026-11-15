@@ -332,3 +332,36 @@ def test_media_controls_do_nothing_off_windows(monkeypatch):
     mc.set_status("playing")            # all safe no-ops without Windows
     mc.set_track("x")
     mc.stop()
+
+
+# --- right-click "Play with ALMP" / "Add to ALMP playlist" for files (v8.2.3) ---
+def test_file_menu_entries_cover_audio_and_video_with_both_verbs():
+    exe = r"C:\ALMP\ALMP.exe"
+    entries = platform_win.file_verb_entries(exe)
+    commands = {k: d for k, n, d, _t in entries if k.endswith(r"\command")}
+    for ext in (".mp3", ".flac", ".mp4", ".mkv"):
+        base = rf"Software\Classes\SystemFileAssociations\{ext}\shell"
+        assert commands[rf"{base}\ALMP.Play\command"] == f'"{exe}" "%1"'
+        assert commands[rf"{base}\ALMP.Add\command"] == f'"{exe}" --add "%1"'
+    assert len(commands) == 2 * len(platform_win.MEDIA_MENU_EXTENSIONS)
+    multi = [d for _k, n, d, _t in entries if n == "MultiSelectModel"]
+    assert multi and set(multi) == {"Player"}                # many files at once, no 15-file limit
+    labels = {d for _k, n, d, _t in entries if n == "MUIVerb"}
+    assert labels == {"Play with ALMP", "Add to ALMP playlist"}
+
+
+def test_every_file_menu_entry_has_a_removal():
+    removed = [k for k, _n in platform_win.file_verb_removals()]
+    for key, *_ in platform_win.file_verb_entries(r"C:\ALMP\ALMP.exe"):
+        assert any(key == rk or key.startswith(rk + "\\") for rk in removed)
+
+
+def test_uninstall_script_removes_the_file_menu_entries():
+    bat = (ROOT / "Remove-ALMP-Defaults.bat").read_text(encoding="utf-8")
+    assert r"SystemFileAssociations\%%E\shell\ALMP.Play" in bat
+    assert r"SystemFileAssociations\%%E\shell\ALMP.Add" in bat
+
+
+def test_refresh_menu_entries_does_nothing_elsewhere(monkeypatch):
+    monkeypatch.setattr(platform_win.sys, "platform", "linux")
+    assert platform_win.refresh_menu_entries(r"C:\ALMP\ALMP.exe") is False
