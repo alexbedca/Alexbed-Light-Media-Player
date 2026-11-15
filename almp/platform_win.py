@@ -281,6 +281,35 @@ def folder_verb_entries(exe):
     ]
 
 
+FILE_PLAY_VERB = "ALMP.Play"
+FILE_ADD_VERB = "ALMP.Add"
+ADD_FLAG = "--add"           # on the command line and in the message to a running ALMP: add, do not interrupt
+MEDIA_MENU_EXTENSIONS = tuple(sorted(AUDIO_EXTENSIONS)) + tuple(sorted(VIDEO_EXTENSIONS))
+
+
+def file_verb_entries(exe, extensions=MEDIA_MENU_EXTENSIONS):
+    """Right-click audio or video files (one or many) > "Play with ALMP" / "Add to ALMP playlist".
+
+    Under SystemFileAssociations, so the entries show whatever program is the file's default.
+    "Player" = no 15-file limit; Explorer starts ALMP once per file and the single running ALMP
+    collects them. On Windows 11 they are under "Show more options" (Shift+F10), like other
+    programs that are not installed from the Store."""
+    out = []
+    for ext in extensions:
+        for verb, label, cmd in ((FILE_PLAY_VERB, "Play with ALMP", _cmd(exe)),
+                                 (FILE_ADD_VERB, "Add to ALMP playlist", f'"{exe}" {ADD_FLAG} "%1"')):
+            base = rf"{HKCU_CLASSES}\SystemFileAssociations\{ext}\shell\{verb}"
+            out += [(base, "", label, REG_SZ), (base, "MUIVerb", label, REG_SZ),
+                    (base, "Icon", f'"{exe}",0', REG_SZ), (base, "MultiSelectModel", "Player", REG_SZ),
+                    (rf"{base}\command", "", cmd, REG_SZ)]
+    return out
+
+
+def file_verb_removals(extensions=MEDIA_MENU_EXTENSIONS):
+    return [(rf"{HKCU_CLASSES}\SystemFileAssociations\{ext}\shell\{verb}", None)
+            for ext in extensions for verb in (FILE_PLAY_VERB, FILE_ADD_VERB)]
+
+
 def default_player_removals(extensions=ALL_ASSOC_EXTENSIONS):
     """What Remove-ALMP-Defaults.bat removes (association part): (key, value_name or None = whole key)."""
     c = HKCU_CLASSES
@@ -391,6 +420,28 @@ def folder_verb_installed():
         return False
 
 
+def refresh_menu_entries(exe):
+    """At start (in a background thread): when the right-click entries are on, make sure the file
+    entries exist (added in v8.2.3) and point at this ALMP.exe (the folder may have moved)."""
+    if not folder_verb_installed() or not can_register(exe):
+        return False
+    try:
+        key = rf"{HKCU_CLASSES}\SystemFileAssociations\.mp4\shell\{FILE_PLAY_VERB}\command"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as k:
+            if winreg.QueryValueEx(k, "")[0] == _cmd(exe):
+                return False                       # already up to date
+    except OSError:
+        pass
+    try:
+        _apply_entries(folder_verb_entries(exe) + file_verb_entries(exe))
+        _notify_shell()
+        log.info("Right-click menu entries updated for %s", exe)
+        return True
+    except OSError:
+        log.exception("Could not update the right-click menu entries")
+        return False
+
+
 def set_folder_verb(exe, enabled):
     if sys.platform != "win32":
         return False, "Windows only."
@@ -398,9 +449,10 @@ def set_folder_verb(exe, enabled):
         if enabled:
             if not can_register(exe):
                 return False, "This only works in ALMP.exe on Windows."
-            _apply_entries(folder_verb_entries(exe))
+            _apply_entries(folder_verb_entries(exe) + file_verb_entries(exe))
         else:
-            _apply_removals(folder_verb_removals())
+            _apply_removals(folder_verb_removals() + file_verb_removals())
+        _notify_shell()
         return True, ""
     except OSError as e:
         log.exception("Could not change the folder menu entry")

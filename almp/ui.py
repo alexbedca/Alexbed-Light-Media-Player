@@ -203,6 +203,8 @@ class MediaWindow(QMainWindow):
         self._dialog_active = False
         self._is_fullscreen = False
         self._fs_drawer_wanted = False
+        self._panel_wanted = True        # playlist panel in the normal window (P / playlist button)
+        self._panel_auto_hidden = False  # hidden because ALMP was opened with one file: comes back at 2+
         self._fs_key_time = 0.0          # last key pressed in the fullscreen playlist drawer
         self._fs_title_full = ""
         self._fs_title_key = None
@@ -210,6 +212,7 @@ class MediaWindow(QMainWindow):
         self._pre_fs_geometry = None
         self._end_event_pending = False
         self._ext_queue = []
+        self._ext_add_only = False        # files came from "Add to ALMP playlist": do not interrupt
         self._last_ext_time = -1e9
         self._last_tick_key = None
         self._bar_mode = None
@@ -353,6 +356,9 @@ class MediaWindow(QMainWindow):
         """Files from Explorer. Files handed over by a second ALMP wait 250 ms so a burst of them
         (several files opened together) is gathered first; the files ALMP was started with
         (wait_ms=0) start at once."""
+        if pw.ADD_FLAG in paths:
+            self._ext_add_only = True
+            paths = [p for p in paths if p != pw.ADD_FLAG]
         if not paths:
             self._bring_to_front()
             return
@@ -370,8 +376,13 @@ class MediaWindow(QMainWindow):
         now = time.monotonic()
         start_playing = (now - self._last_ext_time) > 3.0
         self._last_ext_time = now
+        add_only, self._ext_add_only = self._ext_add_only, False
+        if add_only and self.current_path and self.player and not getattr(self.player, "idle_active", True):
+            start_playing = False                  # "Add to ALMP playlist": keep the current track playing
+            self._status(f"Added {len(paths)} item(s) to the playlist.")
         self.scan_targets(paths, external=start_playing)
-        self._bring_to_front()
+        if not add_only:
+            self._bring_to_front()
 
     def _bring_to_front(self):
         if self.isMinimized():
@@ -594,7 +605,8 @@ class MediaWindow(QMainWindow):
     def set_folder_verb(self, on):
         ok, details = pw.set_folder_verb(APP_EXE_PATH, on)
         if ok:
-            self._status('"Play with ALMP" is now in the folder menu.' if on else '"Play with ALMP" was removed.')
+            self._status('"Play with ALMP" and "Add to ALMP playlist" are now in the right-click menu.' if on
+                         else 'The ALMP right-click menu entries were removed.')
         else:
             self._status("Could not change the folder menu: " + details)
         return ok
@@ -1233,7 +1245,6 @@ class MediaWindow(QMainWindow):
         right_row.addStretch(1)
         self.playlist_toggle_button = self._icon_btn("playlist", "Show / hide playlist  (P)", "Show or hide playlist",
                                                      self._toggle_fs_playlist)
-        self.playlist_toggle_button.hide()
         right_row.addWidget(self.playlist_toggle_button)
         self.fullscreen_button = self._icon_btn("fullscreen", "Fullscreen  (F)", "Fullscreen", self._toggle_fullscreen)
         right_row.addWidget(self.fullscreen_button)
@@ -1410,7 +1421,9 @@ class MediaWindow(QMainWindow):
         wide = mode == "wide"
         side = 175 if wide else 130
         self.volume_box.setFixedWidth(side if mode != "narrow" else 150)
-        self.right_box.setFixedWidth(side if mode != "narrow" else 3 * 44 + 16)
+        # In fullscreen the right box holds three buttons (playlist, leave fullscreen, close).
+        right = side if mode != "narrow" else 3 * 44 + 16
+        self.right_box.setFixedWidth(max(right, 3 * 44 + 16) if self._is_fullscreen else right)
         for b, w in ((self.previous_button, 104), (self.play_button, 140), (self.next_button, 104)):
             b.setMinimumWidth(w if wide else (64 if b is self.play_button else 48))
         self.previous_button.setText("Prev" if wide else "")
@@ -1737,7 +1750,8 @@ class MediaWindow(QMainWindow):
             self.playlist_count_label.setText(f"{self.model.rowCount():,} of {total:,}")
         else:
             self.playlist_count_label.setText(f"{total:,} item" + ("" if total == 1 else "s"))
-
+        if self._panel_auto_hidden and total > 1:
+            self.set_playlist_panel(True)             # opened with one file, now there is a list
     # ------------------------------------------------------------------ search
     def _schedule_filter(self, _text=None):
         # Bigger lists wait a little longer for the next key press before searching.
@@ -1818,6 +1832,8 @@ class MediaWindow(QMainWindow):
             self._set_startup_box(on)
             if on and is_compiled() and APP_EXE_PATH:
                 threading.Thread(target=pw.repair_startup_shortcut, args=(APP_EXE_PATH,), daemon=True).start()
+            if is_compiled() and APP_EXE_PATH:
+                threading.Thread(target=pw.refresh_menu_entries, args=(APP_EXE_PATH,), daemon=True).start()
             pw.remove_legacy_run_value()
         else:
             on = False
@@ -2249,6 +2265,8 @@ class MediaWindow(QMainWindow):
         self.playlist_toggle_button.show()
         self.fs_close_button.show()
         self._update_fs_button()
+        if self._bar_mode:
+            self._apply_bar_mode(self._bar_mode)       # room for the three fullscreen buttons
 
     def _exit_fullscreen_ui(self):
         bar = self.control_panel_widget
@@ -2257,10 +2275,11 @@ class MediaWindow(QMainWindow):
         self.left_layout.addWidget(bar)
         bar.show()
         self.splitter.addWidget(self.right_panel)
-        self.right_panel.show()
-        self.playlist_toggle_button.hide()
+        self.right_panel.setVisible(self._panel_wanted)
         self.fs_close_button.hide()
         self._update_fs_button()
+        if self._bar_mode:
+            self._apply_bar_mode(self._bar_mode)
 
     def _layout_overlay(self):
         bar = self.control_panel_widget
@@ -2336,8 +2355,26 @@ class MediaWindow(QMainWindow):
         self.hide_timer.stop()
         self.video.setFocus()
 
+    def set_playlist_panel(self, visible, auto=False):
+        """Show or hide the playlist panel of the normal window. `auto` = ALMP hid it because it was
+        opened with a single file; it then comes back by itself when a second item is added."""
+        self._panel_wanted = bool(visible)
+        self._panel_auto_hidden = bool(auto) and not visible
+        if not self._is_fullscreen:
+            self.right_panel.setVisible(self._panel_wanted)
+            if self._panel_wanted:
+                w = max(self.splitter.width(), 600)
+                sizes = self.splitter.sizes()
+                if len(sizes) == 2 and sizes[1] < 200:
+                    self.splitter.setSizes([int(w * 0.68), int(w * 0.32)])
+            else:
+                fw = QApplication.focusWidget()
+                if fw is not None and self.right_panel.isAncestorOf(fw):
+                    self.video.setFocus()             # the hidden list must not keep the keyboard
+
     def _toggle_fs_playlist(self):
         if not self._is_fullscreen:
+            self.set_playlist_panel(not self._panel_wanted)     # P / playlist button in a normal window
             return
         self._fs_drawer_wanted = not self._fs_drawer_wanted
         self._fs_title_key = None
@@ -2588,7 +2625,8 @@ class MediaWindow(QMainWindow):
         if found == 0:
             self._status("No new playable files were found there.")
         elif self.current_path:
-            self._status(f"Playing: {Path(self.current_path).name}   ({len(self.store):,} items in the list)")
+            n = len(self.store)
+            self._status(f"Playing: {Path(self.current_path).name}   ({n:,} item{'' if n == 1 else 's'} in the list)")
         else:
             self._status(f"Added media. Total: {len(self.store):,} item(s).")
 
@@ -2662,6 +2700,8 @@ class MediaWindow(QMainWindow):
             self.audio_art_label.show()
         else:
             self.audio_art_label.hide()
+            if self.settings.get("play_fullscreen") and not self._is_fullscreen and self.isVisible():
+                self._toggle_fullscreen()          # Settings > Always play videos in fullscreen
 
         if self.player:
             new_speed = speed_for_new_track(self.speed_combo.currentText(), self.settings["keep_speed"])

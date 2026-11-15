@@ -50,6 +50,7 @@ DEFAULTS = {
     "resume_long_files": False,    # optional, off by default; only files of 20 minutes or more
     "sleep_fade": True,            # fade out during the last minute of the sleep timer
     "large_buttons": "auto",       # v8.2: start screen size in fullscreen: auto / always / never
+    "play_fullscreen": False,      # v8.2.3: every video starts in fullscreen
 }
 
 
@@ -140,7 +141,8 @@ def effective_settings(raw):
     raw = raw if isinstance(raw, dict) else {}
     out = dict(DEFAULTS)
     for key in ("shuffle", "remove_played", "high_contrast", "keep_speed", "normalize_volume",
-                "volume_boost", "subtitle_background", "media_controls", "resume_long_files", "sleep_fade"):
+                "volume_boost", "subtitle_background", "media_controls", "resume_long_files", "sleep_fade",
+                "play_fullscreen"):
         out[key] = _as_bool(raw.get(key, DEFAULTS[key]), DEFAULTS[key])
     max_volume = 150 if out["volume_boost"] else 100
     try:

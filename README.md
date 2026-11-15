@@ -14,10 +14,10 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.2 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.3 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
-**New in 8.2.2:** ALMP opens much faster on PCs with many fonts installed (a video now plays about 2 s after a double-click instead of 8 to 70 s).
-See the [release notes](docs/release-notes/v8.2.2.md).
+**New in 8.2.3:** fullscreen opens at once (no more half-drawn control bar), a double-clicked video gets the whole window, a new setting plays every video in fullscreen, and "Play with ALMP" / "Add to ALMP playlist" in the right-click menu for many selected files.
+See the [release notes](docs/release-notes/v8.2.3.md).
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
 and it is not a commercial product.
@@ -39,7 +39,8 @@ and it is not a commercial product.
 - **Settings in one place** (gear button, `Ctrl+,`): high contrast, interface size, video size, *Remove played*,
   keep the playback speed, *Even out loud and quiet parts* (volume normaliser), volume up to 150%,
   subtitle size and a dark box behind subtitles, media keys in the background, *Run at Startup*, and
-  **Make ALMP my default player** / **"Play with ALMP" on folders** (your Windows account only, can be undone).
+  **Make ALMP my default player** / **"Play with ALMP" and "Add to ALMP playlist"** when you right-click
+  files (one or many) or a folder in Explorer (your Windows account only, can be undone).
 - **High-contrast theme** (black, white and yellow) for every part of the window, including the welcome screen.
   The half-filled circle button on the control bar turns it on or off at once.
 - **Interface sizes 100% to 200%** (*Apply now* restarts ALMP at the new size). At large sizes or on small
@@ -79,8 +80,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.2.2-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.2-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.2.3-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.3-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
@@ -95,8 +96,8 @@ Windows does not allow any program to change your defaults silently, so this las
 
 ### Remove ALMP (uninstall)
 
-Run `Remove-ALMP-Defaults.bat`. It removes ALMP from *Open with* and *Default apps*, the "Play with ALMP" folder
-entry, turns off *Run at Startup*,
+Run `Remove-ALMP-Defaults.bat`. It removes ALMP from *Open with* and *Default apps*, the "Play with ALMP" /
+"Add to ALMP playlist" right-click entries, turns off *Run at Startup*,
 and asks whether to delete ALMP's settings and log files too. Then delete the ALMP folder.
 
 ## Keyboard shortcuts

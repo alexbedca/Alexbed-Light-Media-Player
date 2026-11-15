@@ -5,7 +5,7 @@ echo.
 echo  This undoes everything ALMP has set up in Windows for your account:
 echo    - ALMP in the "Open with" and "Default apps" lists
 echo    - "Run at Startup" (if you had turned it on)
-echo    - "Play with ALMP" in the folder right-click menu (if you had turned it on)
+echo    - "Play with ALMP" / "Add to ALMP playlist" in the right-click menu (if you had turned it on)
 echo.
 echo  Your music and video files are NOT touched.
 echo  Please close ALMP before you continue.
@@ -33,6 +33,11 @@ reg delete "HKCU\Software\ALMP" /f >nul 2>&1
 reg delete "HKCU\Software\RegisteredApplications" /v ALMP /f >nul 2>&1
 REM ---- "Play with ALMP" in the folder right-click menu (added from ALMP Settings in v8.1) ----
 reg delete "%CLS%\Directory\shell\ALMP.PlayFolder" /f >nul 2>&1
+REM ---- "Play with ALMP" / "Add to ALMP playlist" for files (v8.2.3) ----
+for %%E in (%EXTS%) do (
+    reg delete "%CLS%\SystemFileAssociations\%%E\shell\ALMP.Play" /f >nul 2>&1
+    reg delete "%CLS%\SystemFileAssociations\%%E\shell\ALMP.Add" /f >nul 2>&1
+)
 
 REM ---- Run at Startup (current shortcut, and the registry entry used by old versions) ----
 if defined APPDATA if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ALMP.lnk" del /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ALMP.lnk" >nul 2>&1

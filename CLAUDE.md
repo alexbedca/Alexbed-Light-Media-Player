@@ -5,7 +5,9 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.2 released 2026-11-14 (Latest; start-up speed fix). Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
+- **Status:** v8.2.2 released 2026-11-14 (Latest; start-up speed fix). v8.2.3 prepared on branch
+  `fix/fullscreen-freeze` (fullscreen freeze fix, playlist hidden for one file, "Always play videos in
+  fullscreen", right-click Play/Add for files); not released yet. Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
   (GPL-3.0-or-later). Release asset: `ALMP-vX.Y.Z-Portable.zip` + SHA-256. Not code-signed (SignPath declined
   for now; see `SIGNING.md`).
 - **Next:** see `ROADMAP.md` (open items: bigger fullscreen drawer/text for TVs, winget/Scoop submission from
@@ -61,6 +63,16 @@ Set-/Remove-ALMP-Defaults.bat  shipped in the zip: default-player registration /
   `SEMIBOLD` in `theme.py` ("Segoe UI Semibold" by name, never bare `font-weight: 600` on Windows), and window
   text must not use symbols Segoe UI lacks (no "✓"; use checkable actions). Re-measure with
   `tools/bench_startup.py` after UI/font changes; target: window ~1 s, video playing ~1.5-2 s.
+- **Fullscreen freeze (v8.2.3):** Qt 6.12's Windows plugin redraws a hidden title bar
+  (`updateCustomTitlebar`) on every maximize/fullscreen in Segoe UI + Segoe Fluent Icons at *Thin* weight;
+  with GDI fonts that searched all fonts (6.4 s, once per run). `almp/titlefonts.py` registers in-memory Thin
+  copies of the PC's own fonts right after `window.show()` (must be after Qt loaded the family). Dead ends,
+  measured: font substitutions, stand-in fonts for missing fallbacks, Qt's emoji/fallback-family APIs,
+  `darkmode=` (moves the cost to start-up), `fontengine=freetype` (25 s).
+- **Still slow (known, not fixed):** names with emoji or Chinese/Japanese/Korean text freeze the controls
+  7-9 s the first time one is drawn (Qt's `populateFamilyAliases` loads every family before fallbacks).
+- Debugging Qt freezes: sample the GUI thread's native stack from a second process (dbghelp
+  StackWalk64, GIL blocks an in-process sampler) and name Qt6Gui offsets from its export table.
 - Known quirk (not fixed): right after ALMP is force-killed, a new start within ~1-2 s can find the stale
   single-instance lock and hand its file to nothing (normal close is fine).
 - Performance claims must match `tools/bench_playlist.py` runs; the README states where targets were **not** met
