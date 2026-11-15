@@ -2625,7 +2625,8 @@ class MediaWindow(QMainWindow):
         if found == 0:
             self._status("No new playable files were found there.")
         elif self.current_path:
-            self._status(f"Playing: {Path(self.current_path).name}   ({len(self.store):,} items in the list)")
+            n = len(self.store)
+            self._status(f"Playing: {Path(self.current_path).name}   ({n:,} item{'' if n == 1 else 's'} in the list)")
         else:
             self._status(f"Added media. Total: {len(self.store):,} item(s).")
 
