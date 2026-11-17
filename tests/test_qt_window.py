@@ -651,3 +651,25 @@ def test_settings_dialog_shows_shader_files(window, qapp, tmp_path, monkeypatch)
     assert "Found 1 shader file(s): Anime4K_Upscale.glsl" in dlg.shader_found.text()
     assert window.settings["user_shaders"] is True
     dlg.close()
+
+
+def test_settings_does_not_block_the_player(window, qapp):
+    """Up to 8.2.5 Settings was modal; in fullscreen the control bar showed but ignored every click,
+    so the player could not even be closed while Settings was open."""
+    from PyQt6.QtWidgets import QApplication
+    window._toggle_fullscreen()
+    dlg = window.show_settings()
+    qapp.processEvents()
+    assert dlg.isVisible() and not dlg.isModal()
+    assert QApplication.activeModalWidget() is None          # the player's buttons still work
+    assert window._dialog_active and not window._is_cursor_hidden
+    assert window.show_settings() is dlg                      # a second click: the same window
+    w = dlg.width()
+    assert w >= dlg._page.sizeHint().width() or w >= int(dlg.screen().availableGeometry().width() * 0.95) - 1
+    dlg.close()
+    qapp.processEvents()
+    assert window._settings_dialog is None and not window._dialog_active
+    assert window.show_settings() is not dlg                  # opens again after closing
+    window._settings_dialog.close()
+    qapp.processEvents()
+    window._toggle_fullscreen()

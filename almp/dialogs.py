@@ -290,6 +290,7 @@ class SettingsDialog(QDialog):
         lay = QVBoxLayout(page)
         lay.setSpacing(8)
         scroll.setWidget(page)
+        self._page = page
         outer.addWidget(scroll)
 
         # --- Look and size ---
@@ -555,7 +556,10 @@ class SettingsDialog(QDialog):
     def _fit_to_screen(self):
         try:
             geo = self.screen().availableGeometry()
-            self.resize(min(640, int(geo.width() * 0.95)), min(760, int(geo.height() * 0.92)))
+            # Wide enough for the widest row (8.2.5 cut off "Open shaders folder" and other text on
+            # the right), never wider than the screen.
+            want = max(640, self._page.sizeHint().width() + 48)
+            self.resize(min(want, int(geo.width() * 0.95)), min(760, int(geo.height() * 0.92)))
         except (AttributeError, RuntimeError):
             self.resize(600, 640)
 

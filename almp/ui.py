@@ -583,12 +583,37 @@ class MediaWindow(QMainWindow):
             dlg.deleteLater()
 
     def show_settings(self):
+        """Settings is NOT modal (8.2.6): its changes apply at once, and a modal window blocked every
+        button of the player. In fullscreen the control bar stayed on screen but ignored the mouse,
+        so even the close button did nothing while Settings was open. Only one is open at a time."""
         if self._is_fullscreen:
             self._on_fs_activity()
-        with self._modal():
-            dlg = SettingsDialog(self)
-            dlg.exec()
-            dlg.deleteLater()
+        dlg = getattr(self, "_settings_dialog", None)
+        if dlg is not None:
+            dlg.showNormal()
+            dlg.raise_()
+            dlg.activateWindow()
+            return dlg
+        guard = self._modal()          # keeps the pointer and the fullscreen controls visible
+        guard.__enter__()
+        dlg = SettingsDialog(self)
+        dlg.setModal(False)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+
+        def closed(_result=0):
+            if getattr(self, "_settings_dialog", None) is dlg:
+                self._settings_dialog = None
+                guard.__exit__(None, None, None)
+                if self._is_fullscreen and not self._closing:
+                    self.video.setFocus()
+
+        dlg.finished.connect(closed)
+        dlg.destroyed.connect(closed)
+        self._settings_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        return dlg
 
     def set_simple_setting(self, key, value):
         self.settings[key] = value
