@@ -4,6 +4,7 @@
 """The main window. Decisions live in logic.py / store.py / settings.py; this file wires them to
 Qt and mpv. Rules kept from v8.0.x: start clean (no playlist is ever restored), the loop mode is
 never saved, Delete never deletes without a clear question, nothing connects to the internet."""
+import bisect
 import os
 import sys
 import threading
@@ -11,7 +12,19 @@ import time
 from collections import deque
 from pathlib import Path
 
-from PyQt6.QtCore import QEvent, QEventLoop, QObject, QPoint, QSize, QStandardPaths, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import (
+    QEvent,
+    QEventLoop,
+    QItemSelectionModel,
+    QObject,
+    QPoint,
+    QSize,
+    QStandardPaths,
+    Qt,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
 from PyQt6.QtGui import (
     QCursor,
     QDesktopServices,
@@ -978,8 +991,24 @@ class MediaWindow(QMainWindow):
         if not index.isValid():
             index = self.playlist.currentIndex()
         menu = self._new_menu()
+        count = 0
         if index.isValid():
-            self.playlist.setCurrentIndex(index)
+            sm = self.playlist.selectionModel()
+            if sm is not None and sm.isSelected(index):
+                # Right-click inside a selection of several: keep them all selected.
+                sm.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+            else:
+                self.playlist.setCurrentIndex(index)
+            count = len(self._selected_source_rows())
+        if index.isValid() and count > 1:
+            menu.addAction("Play", self.play_selected_item)
+            menu.addSeparator()
+            menu.addAction(f"Remove {count} items from list (Delete)", self.remove_from_playlist)
+            menu.addAction(f"Copy {count} file paths", self._copy_selected_paths)
+            menu.addSeparator()
+            menu.addAction(f"Delete {count} files... (Shift+Delete)", self.delete_selected_file)
+            menu.addSeparator()
+        elif index.isValid():
             src = self.model.source_row(index.row())
             path = self.store.paths[src] if src >= 0 else None
             menu.addAction("Play", self.play_selected_item)
@@ -2226,13 +2255,54 @@ class MediaWindow(QMainWindow):
             self.welcome_widget.raise_()
             self._update_media_controls()
 
+    def _selected_source_rows(self):
+        """Source rows of every selected item, in list order (the current item if none is selected)."""
+        sm = self.playlist.selectionModel()
+        rows = sorted({self.model.source_row(ix.row()) for ix in sm.selectedRows()}) if sm else []
+        rows = [r for r in rows if r >= 0]
+        if not rows:
+            r = self._selected_source_row()
+            rows = [r] if r >= 0 else []
+        return rows
+
+    def _copy_selected_paths(self):
+        paths = [self.store.paths[r] for r in self._selected_source_rows()]
+        QGuiApplication.clipboard().setText("\r\n".join(paths))
+        self._status(f"Copied {len(paths)} file paths")
+
+    def _remove_rows(self, rows, announce=True):
+        """Remove several items at once (the files are kept). Returns their paths."""
+        rows = sorted(set(rows))
+        cur = self.current_index
+        i = bisect.bisect_left(rows, cur)
+        was_current = cur >= 0 and i < len(rows) and rows[i] == cur
+        next_src = cur - i                    # the track that moves up into the playing one's place
+        first_view = self.model.view_row(rows[0]) if rows else -1
+        paths = self.model.remove_sources(rows)
+        if paths and self.queue:
+            gone = set(paths)
+            self.queue[:] = [p for p in self.queue if p not in gone]
+        self._update_playlist_count()
+        if announce:
+            self._status(f"Removed {len(paths)} items from the list (the files are kept)", announce=True)
+        n = self.model.rowCount()
+        if n:
+            self.playlist.setCurrentIndex(self.model.index(min(max(first_view, 0), n - 1)))
+        if was_current:
+            self._after_current_removed(next_src)
+        return paths
+
     def remove_from_playlist(self):
-        src = self._selected_source_row()
-        if src < 0:
+        rows = self._selected_source_rows()
+        if not rows:
             with self._modal():
                 QMessageBox.warning(self, "Remove from List", "Please select a file to remove.")
             return
-        view_row = self.playlist.currentIndex().row()
+        if len(rows) > 1:
+            self._remove_rows(rows)
+            return
+        src = rows[0]
+        view_row = self.model.view_row(src)
         was_current = src == self.current_index
         path = self.model.remove_source(src)
         if path in self.queue:
@@ -2285,11 +2355,15 @@ class MediaWindow(QMainWindow):
         timer.stop()
 
     def delete_selected_file(self):
-        src = self._selected_source_row()
-        if src < 0:
+        rows = self._selected_source_rows()
+        if not rows:
             with self._modal():
                 QMessageBox.warning(self, "Delete File", "Please select a file in the playlist to delete.")
             return
+        if len(rows) > 1:
+            self._delete_files(rows)
+            return
+        src = rows[0]
         path = self.store.paths[src]
         if not path or not os.path.exists(path):
             self._status("File no longer exists.")
@@ -2385,6 +2459,130 @@ class MediaWindow(QMainWindow):
         elif was_playing and self.player:
             self._set_mpv_pause(False)
             self._set_play_ui(True)
+
+    def _pause_for_question(self):
+        """Pause while a question is shown. Returns True if it was playing."""
+        if not self.player:
+            return False
+        try:
+            playing = not bool(self.player.pause) and not self.player.idle_active
+            if playing:
+                self._set_mpv_pause(True)
+            return playing
+        except Exception:          # noqa: BLE001
+            log.exception("Could not pause before delete")
+            return False
+
+    def _delete_files(self, rows):
+        """Delete several selected files: one question, then each file to the Recycle Bin (or
+        permanently on drives without one, which the question says plainly)."""
+        paths = [self.store.paths[r] for r in rows]
+        paths = [p for p in paths if p and os.path.exists(p)]
+        if not paths:
+            self._status("These files no longer exist.")
+            return
+        was_fullscreen = self._is_fullscreen
+        was_playing = self._pause_for_question()
+        self.video.setMouseTracking(True)
+
+        n = len(paths)
+        no_bin = {p for p in paths if not pw.recycle_bin_available(p)}
+        names = "\n".join(Path(p).name for p in paths[:5])
+        if n > 5:
+            names += f"\n... and {n - 5} more"
+        if not no_bin:
+            title = f"Delete {n} Files"
+            message = (f"Send these {n} files to the Recycle Bin?\n\n{names}\n\n"
+                       "You can restore them from the Recycle Bin later.")
+            yes_text = "Yes, to Recycle Bin"
+        else:
+            if len(no_bin) == n:
+                title = f"Delete {n} Files Permanently?"
+                which = f"These {n} files are"
+                rest = ""
+            else:
+                title = f"Delete {n} Files?"
+                which = f"{len(no_bin)} of these {n} files are"
+                rest = " The others go to the Recycle Bin."
+            message = (f"{which} on a drive with no Recycle Bin (for example a USB stick, memory card or "
+                       f"network drive). They will be deleted PERMANENTLY and cannot be restored.{rest}"
+                       f"\n\n{names}\n\nDelete them anyway?")
+            yes_text = "Yes, delete"
+        with self._modal():
+            dialog = CustomConfirmDialog(self, title, message, yes_text=yes_text)
+            dialog.setModal(True)
+            reply = dialog.exec()
+            dialog.deleteLater()
+        if was_fullscreen:
+            self.video.setFocus()
+        if reply != QDialog.DialogCode.Accepted:
+            if was_playing and self.player:
+                self._set_mpv_pause(False)
+                self._set_play_ui(True)
+            return
+
+        playing_path = self.current_path
+        playing_hit = playing_path in set(paths)
+        resume_at = None
+        if playing_hit and self.player:
+            try:
+                resume_at = self.player.time_pos
+                self.player.stop()
+            except Exception:          # noqa: BLE001
+                log.exception("Could not stop playback before delete")
+            self._wait_until_idle()
+
+        self._status(f"Deleting {n} files...")
+        hwnd = 0
+        try:
+            hwnd = int(self.winId())
+        except (RuntimeError, TypeError):
+            pass
+        deleted, failed, cancelled = [], [], False
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for p in paths:
+                result = pw.send_to_recycle_bin(p, permanent=p in no_bin, hwnd=hwnd)
+                if result == pw.DELETE_OK:
+                    deleted.append(p)
+                elif result == pw.DELETE_CANCELLED:
+                    cancelled = True
+                    break
+                else:
+                    failed.append(p)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        rows_gone = [r for r in (self.store.index_of(p) for p in deleted) if r >= 0]
+        if rows_gone:
+            self._remove_rows(rows_gone, announce=False)     # plays the next track if the playing one went
+        if playing_hit and playing_path not in deleted:
+            src = self.store.index_of(playing_path)
+            if src >= 0 and (was_playing or resume_at):
+                self.play_index(src, start=resume_at)            # it was not deleted: carry on
+                if not was_playing:
+                    self._set_mpv_pause(True)
+                    self._set_play_ui(False)
+        elif not playing_hit and was_playing and self.player:
+            self._set_mpv_pause(False)
+            self._set_play_ui(True)
+
+        recycled = sum(1 for p in deleted if p not in no_bin)
+        parts = []
+        if recycled:
+            parts.append(f"{recycled} sent to the Recycle Bin")
+        if len(deleted) - recycled:
+            parts.append(f"{len(deleted) - recycled} deleted permanently")
+        if cancelled:
+            parts.append(f"{n - len(deleted) - len(failed)} not deleted (cancelled)")
+        if failed:
+            parts.append(f"{len(failed)} could not be deleted")
+        self._status("Files: " + ", ".join(parts or ["none deleted"]), announce=True)
+        if failed:
+            shown = "\n".join(failed[:5]) + (f"\n... and {len(failed) - 5} more" if len(failed) > 5 else "")
+            with self._modal():
+                QMessageBox.critical(self, "Delete Error",
+                                     f"Could not delete {len(failed)} of the files. They were not changed:\n\n{shown}")
 
     # ------------------------------------------------------------------ progress
     def _poll_player_metrics(self):

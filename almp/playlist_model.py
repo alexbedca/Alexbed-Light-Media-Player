@@ -184,6 +184,27 @@ class PlaylistModel(QAbstractListModel):
             self.endRemoveRows()
         return path
 
+    def remove_sources(self, source_rows):
+        """Remove several rows of the playlist at once (multi-select). Returns their paths."""
+        rows = sorted({r for r in source_rows if 0 <= r < len(self.store.paths)})
+        if not rows:
+            return []
+        if len(rows) == 1:
+            path = self.remove_source(rows[0])
+            return [path] if path is not None else []
+        gone = set(rows)
+        self.beginResetModel()
+        removed = self.store.remove_rows(rows)
+        cur = self._current
+        if cur in gone:
+            self._current = -1
+        elif cur >= 0:
+            self._current = cur - bisect.bisect_left(rows, cur)
+        if self._rows is not None:
+            self._rows = [r - bisect.bisect_left(rows, r) for r in self._rows if r not in gone]
+        self.endResetModel()
+        return removed
+
     def _shift_current_after_remove(self, source_row):
         if self._current == source_row:
             self._current = -1

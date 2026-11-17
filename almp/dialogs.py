@@ -68,6 +68,7 @@ KEYBOARD_ROWS = [
     ("Ctrl+,", "Settings"),
     ("Enter", "Play the selected playlist item"),
     ("Delete / Shift+Delete", "Remove from the list / delete the file (asks first)"),
+    ("Ctrl+click / Shift+click", "Select several items in the playlist (then Delete or Shift+Delete)"),
     ("Menu key or right-click", "More choices for the selected item (Play next, Show in folder...)"),
     ("Tab / Shift+Tab", "Move between buttons; Space presses the button that has the yellow frame"),
     ("F1", "This help"),

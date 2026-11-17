@@ -153,6 +153,27 @@ class PlaylistStore:
         self.version += 1
         return path
 
+    def remove_rows(self, rows):
+        """Remove several rows in one pass (O(n), also for 100,000 rows). Returns their paths,
+        in list order."""
+        n = len(self.paths)
+        drop = sorted({r for r in rows if 0 <= r < n})
+        if not drop:
+            return []
+        if len(drop) == 1:
+            return [self.remove_at(drop[0])]
+        gone = set(drop)
+        removed = [self.paths[r] for r in drop]
+        keep = [i for i in range(n) if i not in gone]
+        kinds_complete = len(self._kinds) == n
+        self.paths = [self.paths[i] for i in keep]
+        self.search = [self.search[i] for i in keep]
+        self._kinds = bytearray(self._kinds[i] for i in keep) if kinds_complete else bytearray()
+        for p in removed:
+            self._keys.discard(self.key_of(p))
+        self.version += 1
+        return removed
+
     def move(self, src, dst):
         """Move row `src` so that it ends up at row `dst` (in the final list)."""
         n = len(self.paths)
