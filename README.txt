@@ -103,7 +103,9 @@ settings and log files. Then delete the ALMP folder.
   video size, remove played, keep the playback speed, even out loud
   and quiet parts, volume up to 150%, show subtitles (off until you
   turn it on), subtitle size and dark box, video upscaling (Standard
-  / Sharp / High quality), gapless playback, exclusive audio, the
+  / Sharp / High quality), your own shaders (.glsl files you put
+  in a "shaders" folder next to ALMP.exe; ALMP includes none and
+  downloads nothing), gapless playback, exclusive audio, the
   log, media keys in the background, Run at Startup, default player.
 - High Contrast Theme (black, white and yellow): the half-filled
   circle button, or Settings. Applies at once, everywhere.

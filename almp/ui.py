@@ -105,14 +105,17 @@ from .media import (
     write_playlist_file,
 )
 from .naturalsort import natural_name_key, natural_path_key
-from .paths import get_app_icon_path, is_compiled
+from .paths import app_dir, get_app_icon_path, is_compiled
 from .player import (
     BOOST_MAX_VOLUME,
     MPV_IMPORT_ERROR,
     NORMAL_MAX_VOLUME,
     SCALER_KEYS,
+    SHADER_FOLDER,
     VIDEO_SIZE_NAMES,
+    apply_user_shaders,
     audio_format_text,
+    find_user_shaders,
     gapless_options,
     get_mpv_end_reason,
     mpv,
@@ -709,6 +712,46 @@ class MediaWindow(QMainWindow):
     def _apply_upscaling(self, level):
         for k, v in upscaling_properties(level, self._scaler_defaults).items():
             set_prop(self.player, k, v)
+
+    def user_shader_folder(self):
+        """The "shaders" folder next to ALMP.exe (next to main.py when run from source)."""
+        return os.path.join(app_dir(), SHADER_FOLDER)
+
+    def set_user_shaders(self, on):
+        """Settings > Video upscaling > Use my own shaders. Returns the files now in use."""
+        self.settings["user_shaders"] = bool(on)
+        update_settings(user_shaders=bool(on))
+        found = self._apply_user_shaders()
+        if not on:
+            self._status("Your own shaders are off.")
+        elif found:
+            self._status(f"Your own shaders: {len(found)} file(s) in use for videos.")
+        else:
+            self._status("No shader files (.glsl) in the shaders folder yet; nothing was loaded.")
+        return found
+
+    def _apply_user_shaders(self):
+        """Hand the files in the shaders folder to mpv (looked at again for every video, so files
+        added later are used from the next video on). Only mpv is told when the list changed."""
+        paths = find_user_shaders(self.user_shader_folder()) if self.settings.get("user_shaders") else []
+        if paths != getattr(self, "_shaders_loaded", []):
+            if apply_user_shaders(self.player, paths):
+                self._shaders_loaded = paths
+                if paths:
+                    log.info("User shaders in use: %s", ", ".join(os.path.basename(p) for p in paths))
+        return paths
+
+    def open_user_shader_folder(self):
+        """Create the shaders folder if needed (only on this click) and open it in Explorer."""
+        folder = self.user_shader_folder()
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError:
+            log.warning("Could not create %s", folder, exc_info=True)
+            self._status("The shaders folder cannot be created here (the ALMP folder is read-only).")
+            return False
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        return True
 
     def set_log_mode(self, mode):
         """Settings > Privacy > Log. Used when ALMP closes (and at the next start)."""
@@ -1898,6 +1941,8 @@ class MediaWindow(QMainWindow):
                     log.debug("mpv option %s not readable", k, exc_info=True)
             if s["upscaling"] != "standard":
                 self._apply_upscaling(s["upscaling"])
+            if s["user_shaders"]:
+                self._apply_user_shaders()
 
             @self.player.event_callback("end-file")
             def handle_end_file(event):
@@ -3129,6 +3174,8 @@ class MediaWindow(QMainWindow):
             already = self._in_end_handler and planned == path and not options
             try:
                 set_prop(self.player, "sub-visibility", bool(self.settings["show_subtitles"]))
+                if self.settings["user_shaders"] and not is_audio_path(path):
+                    self._apply_user_shaders()
                 if not already:
                     self.player.loadfile(path, mode="replace", **options)
                     self._loadfile_count += 1

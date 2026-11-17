@@ -140,6 +140,9 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Shift+Delete on files you do not need: ONE question for all of them, then they are in the Recycle Bin.
       With files on a USB stick the question says how many will be deleted PERMANENTLY.
 - [ ] The playing track among the removed / deleted ones: the next track plays.
+- [ ] Settings > "Use my own shaders": off by default; "Open shaders folder" creates `shaders` next to ALMP.exe
+      and opens it. Put a .glsl file there (for example FSRCNNX): Settings says "Found 1 shader file(s)", the next
+      video uses it (sharper on a 480p/720p video); a broken .glsl file does not stop or black out the video.
 
 ## 10. New in 8.2.4
 **Data folder (nothing left on the PC)**

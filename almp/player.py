@@ -94,6 +94,44 @@ def gapless_options(on):
     return {"gapless_audio": "weak", "prefetch_playlist": "no"}
 
 
+# Optional user shaders (Settings > Playback): mpv shader files (.glsl / .hook) the user puts in a
+# "shaders" folder next to ALMP.exe, for example FSRCNNX or Anime4K. ALMP ships none and downloads
+# none; it only hands the files it finds to mpv (glsl-shaders). Off by default.
+SHADER_FOLDER = "shaders"
+SHADER_EXTENSIONS = (".glsl", ".hook")
+MAX_USER_SHADERS = 16
+
+
+def find_user_shaders(folder):
+    """Shader files in `folder` (not its subfolders), sorted by name, at most MAX_USER_SHADERS.
+    A missing or unreadable folder gives an empty list."""
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    found = []
+    for name in sorted(names, key=str.casefold):
+        full = os.path.join(folder, name)
+        if name.lower().endswith(SHADER_EXTENSIONS) and os.path.isfile(full):
+            found.append(full)
+    return found[:MAX_USER_SHADERS]
+
+
+def apply_user_shaders(player, paths):
+    """Make mpv use exactly these shader files (an empty list removes them). mpv itself skips a file
+    it cannot compile, so a broken file never stops playback. Returns False if mpv refused."""
+    if player is None:
+        return False
+    try:
+        player.command("change-list", "glsl-shaders", "clr", "")
+        for path in paths:
+            player.command("change-list", "glsl-shaders", "append", path)
+        return True
+    except Exception:          # noqa: BLE001 - mpv raises its own error types
+        log.warning("mpv did not accept the shader list %r", paths, exc_info=True)
+        return False
+
+
 def upscaling_properties(level, standard=None):
     """mpv properties for Standard / Sharp / High quality. `standard` = mpv's own values at start."""
     if level in ("sharp", "high"):

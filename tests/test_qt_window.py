@@ -5,6 +5,7 @@ so these run there. Nothing here plays sound or opens a visible window."""
 import os
 import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -588,3 +589,65 @@ def test_ctrl_and_shift_click_select_several(window, qapp):
     assert window._selected_source_rows() == [1, 3, 4, 5]
     click(2)                                                     # a plain click: just that one again
     assert window._selected_source_rows() == [2]
+
+
+def test_find_user_shaders(tmp_path):
+    from almp.player import MAX_USER_SHADERS, find_user_shaders
+    assert find_user_shaders(tmp_path / "missing") == []
+    (tmp_path / "b_FSRCNNX.glsl").write_text("x")
+    (tmp_path / "A_anime4k.GLSL").write_text("x")
+    (tmp_path / "c.hook").write_text("x")
+    (tmp_path / "readme.txt").write_text("x")
+    (tmp_path / "sub.glsl").mkdir()
+    assert [Path(p).name for p in find_user_shaders(tmp_path)] == ["A_anime4k.GLSL", "b_FSRCNNX.glsl", "c.hook"]
+    for i in range(MAX_USER_SHADERS + 5):
+        (tmp_path / f"z{i:02}.glsl").write_text("x")
+    assert len(find_user_shaders(tmp_path)) == MAX_USER_SHADERS
+
+
+def test_apply_user_shaders_commands():
+    from almp.player import apply_user_shaders
+    p = FakeMPV()
+    assert apply_user_shaders(p, ["C:/s/a.glsl", "C:/s/b.glsl"])
+    assert p.commands == [("change-list", "glsl-shaders", "clr", ""),
+                          ("change-list", "glsl-shaders", "append", "C:/s/a.glsl"),
+                          ("change-list", "glsl-shaders", "append", "C:/s/b.glsl")]
+    assert apply_user_shaders(None, []) is False
+
+
+def test_user_shaders_setting_off_by_default_and_live(window, qapp, tmp_path, monkeypatch):
+    from almp.settings import DEFAULTS, effective_settings
+    assert DEFAULTS["user_shaders"] is False and effective_settings({})["user_shaders"] is False
+    folder = tmp_path / "shaders"
+    folder.mkdir()
+    monkeypatch.setattr(window, "user_shader_folder", lambda: str(folder))
+    window.player.commands.clear()
+    assert window.set_user_shaders(True) == []                  # empty folder: nothing to load
+    assert window.player.commands == []
+    (folder / "FSRCNNX_x2.glsl").write_text("//!HOOK MAIN")
+    from almp.store import make_entry
+    video = str(tmp_path / "clip.mp4")
+    window.model.append_entries([make_entry(video), make_entry(str(tmp_path / "song.flac"))])
+    window.play_index(window.store.index_of(video))             # a new video looks at the folder again
+    assert ("change-list", "glsl-shaders", "append", str(folder / "FSRCNNX_x2.glsl")) in window.player.commands
+    window.player.commands.clear()
+    window.play_index(window.store.index_of(video))             # unchanged: mpv is not told again
+    assert not any(c[:2] == ("change-list", "glsl-shaders") for c in window.player.commands)
+    assert window.set_user_shaders(False) == []
+    assert window.player.commands[-1] == ("change-list", "glsl-shaders", "clr", "")
+    assert window.settings["user_shaders"] is False
+
+
+def test_settings_dialog_shows_shader_files(window, qapp, tmp_path, monkeypatch):
+    from almp.dialogs import SettingsDialog
+    folder = tmp_path / "shaders"
+    monkeypatch.setattr(window, "user_shader_folder", lambda: str(folder))
+    dlg = SettingsDialog(window)
+    assert dlg.user_shaders.isChecked() is False
+    assert "No shader files" in dlg.shader_found.text()
+    folder.mkdir()
+    (folder / "Anime4K_Upscale.glsl").write_text("x")
+    dlg.user_shaders.setChecked(True)
+    assert "Found 1 shader file(s): Anime4K_Upscale.glsl" in dlg.shader_found.text()
+    assert window.settings["user_shaders"] is True
+    dlg.close()

@@ -20,7 +20,9 @@ and no accounts, ads or tracking.
 **Version:** 8.2.5 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
 **New in 8.2.5:** select several playlist items at once (Ctrl+click, Shift+click, Ctrl+A) to remove them from the
-list or delete the files in one go. See the [release notes](docs/release-notes/v8.2.5.md).
+list or delete the files in one go, and (for advanced users) your own video shaders: put mpv `.glsl` files such as
+FSRCNNX or Anime4K in a `shaders` folder next to `ALMP.exe` and turn them on in Settings. ALMP includes no shaders and
+downloads nothing. See the [release notes](docs/release-notes/v8.2.5.md).
 
 **New in 8.2.4:** ALMP keeps all its files in a `Data` folder next to `ALMP.exe` (delete the folder and it is gone),
 a small log that is cleared on close, *Show subtitles* (off until you turn it on), **All / Video / Audio** filter,
@@ -51,7 +53,7 @@ and it is not a commercial product.
 - **Settings in one place** (gear button, `Ctrl+,`): high contrast, interface size, video size, *Remove played*,
   keep the playback speed, *Even out loud and quiet parts* (volume normaliser), volume up to 150%,
   show subtitles (remembered, off until you turn it on), subtitle size and a dark box behind subtitles,
-  video upscaling (Standard / Sharp / High quality, mpv's own scalers), media keys in the background, *Run at Startup*, and
+  video upscaling (Standard / Sharp / High quality, mpv's own scalers), optional own shaders from a `shaders` folder, media keys in the background, *Run at Startup*, and
   **Make ALMP my default player** / **"Play with ALMP" and "Add to ALMP playlist"** when you right-click
   files (one or many) or a folder in Explorer (your Windows account only, can be undone).
 - **High-contrast theme** (black, white and yellow) for every part of the window, including the welcome screen.
