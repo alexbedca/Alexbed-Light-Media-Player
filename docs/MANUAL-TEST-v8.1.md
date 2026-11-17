@@ -132,6 +132,14 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
 
+## 12. New in 8.2.6
+- [ ] Play a video in fullscreen, click the gear: Settings opens on top of the video.
+- [ ] With Settings still open: Pause/Play, Next, the volume, leave fullscreen and the close X all
+      work with the mouse; Settings stays visible on top.
+- [ ] Click the gear again (or Ctrl+,): the same Settings window comes to the front, no second one.
+- [ ] No text in Settings is cut off on the right ("Open shaders folder", "Apply now").
+- [ ] Close Settings: in fullscreen the controls and pointer hide again after a few seconds.
+
 ## 11. New in 8.2.5
 - [ ] Ctrl+click three playlist items, Shift+click a range, Ctrl+A: all of them are highlighted.
 - [ ] Delete removes all selected items from the list (files kept); the item after them is selected.
