@@ -52,6 +52,12 @@ UPSCALING_NOTE = ("Only matters when a video is smaller than the screen (for exa
                   "downloaded). High quality needs more graphics power and may stutter on slower "
                   "graphics cards.")
 
+SHADERS_NOTE = ("For advanced users. ALMP includes no shaders and downloads nothing: put mpv shader "
+                "files (for example FSRCNNX or Anime4K) in the folder yourself. They are used for videos, "
+                "on top of the upscaling above, and files added later are used from the next video on. "
+                "Neural-network shaders need a strong graphics card and can make videos stutter. A file "
+                "mpv cannot read is skipped.")
+
 KEYBOARD_ROWS = [
     ("Space", "Play / pause"),
     ("F  /  Esc", "Fullscreen / leave fullscreen"),
@@ -68,6 +74,7 @@ KEYBOARD_ROWS = [
     ("Ctrl+,", "Settings"),
     ("Enter", "Play the selected playlist item"),
     ("Delete / Shift+Delete", "Remove from the list / delete the file (asks first)"),
+    ("Ctrl+click / Shift+click", "Select several items in the playlist (then Delete or Shift+Delete)"),
     ("Menu key or right-click", "More choices for the selected item (Play next, Show in folder...)"),
     ("Tab / Shift+Tab", "Move between buttons; Space presses the button that has the yellow frame"),
     ("F1", "This help"),
@@ -445,6 +452,20 @@ class SettingsDialog(QDialog):
         row.addWidget(self.upscaling, 1)
         lay.addLayout(row)
         lay.addWidget(_note(UPSCALING_NOTE))
+        self.user_shaders = QCheckBox("Use my own shaders (.glsl files in the \"shaders\" folder next to ALMP)")
+        self.user_shaders.setChecked(bool(s["user_shaders"]))
+        self.user_shaders.setAccessibleName("Use my own shaders from the shaders folder")
+        self.user_shaders.toggled.connect(self._toggle_user_shaders)
+        lay.addWidget(self.user_shaders)
+        row = QHBoxLayout()
+        self.shader_found = _note("")
+        row.addWidget(self.shader_found, 1)
+        self.open_shaders = QPushButton("Open shaders folder")
+        self.open_shaders.clicked.connect(self._open_shader_folder)
+        row.addWidget(self.open_shaders)
+        lay.addLayout(row)
+        lay.addWidget(_note(SHADERS_NOTE))
+        self._update_shader_note()
         lay.addWidget(_line())
 
         # --- Music (lossless) ---
@@ -562,6 +583,25 @@ class SettingsDialog(QDialog):
             self.startup.blockSignals(False)
         except RuntimeError:
             pass                      # the dialog is closed
+
+    def _toggle_user_shaders(self, on):
+        self.win.set_user_shaders(on)
+        self._update_shader_note()
+
+    def _open_shader_folder(self):
+        self.win.open_user_shader_folder()
+        self._update_shader_note()
+
+    def _update_shader_note(self):
+        import os
+
+        from .player import find_user_shaders
+        found = find_user_shaders(self.win.user_shader_folder())
+        if found:
+            names = ", ".join(os.path.basename(f) for f in found[:3]) + (" ..." if len(found) > 3 else "")
+            self.shader_found.setText(f"Found {len(found)} shader file(s): {names}")
+        else:
+            self.shader_found.setText("No shader files found yet.")
 
     def _log_mode_changed(self, mode):
         self.win.set_log_mode(mode)

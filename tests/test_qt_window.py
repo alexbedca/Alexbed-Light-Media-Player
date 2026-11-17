@@ -5,6 +5,7 @@ so these run there. Nothing here plays sound or opens a visible window."""
 import os
 import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -441,3 +442,212 @@ def test_add_to_playlist_plays_when_nothing_is_playing(qapp, window, tmp_path):
     song.write_bytes(b"")
     window.open_external(["--add", str(song)], wait_ms=0)
     assert pump(qapp, lambda: window.player.loaded)
+
+def _select_rows(window, rows):
+    from PyQt6.QtCore import QItemSelectionModel
+    sm = window.playlist.selectionModel()
+    sm.clearSelection()
+    flag = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+    for r in rows:
+        sm.select(window.model.index(r), flag)
+
+
+def test_playlist_allows_selecting_several(window):
+    from PyQt6.QtWidgets import QAbstractItemView
+    assert window.playlist.selectionMode() == QAbstractItemView.SelectionMode.ExtendedSelection
+
+
+def test_model_remove_sources_with_search_and_playing_track(window, qapp):
+    from almp.store import make_entry
+    m = window.model
+    m.append_entries([make_entry(f"/m/{i} song.mp3") for i in range(8)])
+    m.set_current(6)
+    m.set_filter("song")
+    assert m.remove_sources([1, 4, 2]) == ["/m/1 song.mp3", "/m/2 song.mp3", "/m/4 song.mp3"]
+    assert m.current == 3                                        # "6" moved up by three
+    assert [m.path_at_view(r) for r in range(m.rowCount())] == [
+        "/m/0 song.mp3", "/m/3 song.mp3", "/m/5 song.mp3", "/m/6 song.mp3", "/m/7 song.mp3"]
+    assert m.remove_sources([3, 0]) and m.current == -1          # the playing one went
+    m.set_filter("")
+    assert m.rowCount() == 3
+
+
+def test_remove_several_selected_items(window, qapp, tmp_path):
+    lib = make_library(tmp_path / "lib", 1, 6)
+    window.shuffle_checkbox.setChecked(False)
+    window.scan_targets([str(lib)])
+    assert pump(qapp, lambda: not window._scan_active and len(window.store) == 6)
+    playing = window.current_path
+    names = list(window.store.paths)
+    _select_rows(window, [1, 3, 4])
+    assert window._selected_source_rows() == [1, 3, 4]
+    window.remove_from_playlist()
+    assert window.store.paths == [names[0], names[2], names[5]]
+    assert window.current_path == playing                        # untouched: it was not selected
+    assert window._selected_source_rows() == [1]                 # selection moves to the next item
+    # the playing track among the selected: the next remaining track plays
+    window.queue[:] = [names[5]]
+    _select_rows(window, [0, 2])
+    window.remove_from_playlist()
+    assert window.store.paths == [names[2]]
+    assert window.queue == []
+    assert window.current_path == names[2]
+
+
+def test_delete_several_selected_files(window, qapp, tmp_path, monkeypatch):
+    from almp import platform_win as pw
+    from almp import ui
+    lib = make_library(tmp_path / "lib", 1, 5)
+    window.shuffle_checkbox.setChecked(False)
+    window.scan_targets([str(lib)])
+    assert pump(qapp, lambda: not window._scan_active and len(window.store) == 5)
+    names = list(window.store.paths)
+    asked = []
+
+    class Yes:
+        def __init__(self, parent, title, message, yes_text=""):
+            asked.append((title, message, yes_text))
+
+        def setModal(self, _):
+            pass
+
+        def exec(self):
+            return ui.QDialog.DialogCode.Accepted
+
+        def deleteLater(self):
+            pass
+
+    sent = []
+
+    def fake_bin(path, permanent=False, hwnd=0):
+        sent.append((path, permanent))
+        return pw.DELETE_FAILED if path == names[3] else pw.DELETE_OK
+
+    monkeypatch.setattr(ui, "CustomConfirmDialog", Yes)
+    monkeypatch.setattr(pw, "recycle_bin_available", lambda p: True)
+    monkeypatch.setattr(pw, "send_to_recycle_bin", fake_bin)
+    errors = []
+    monkeypatch.setattr(ui.QMessageBox, "critical", lambda *a, **k: errors.append(a))
+    _select_rows(window, [0, 2, 3])                              # 0 is playing; 3 will fail
+    window.delete_selected_file()
+    assert len(asked) == 1 and asked[0][0] == "Delete 3 Files" and "Recycle Bin" in asked[0][1]
+    assert [p for p, _ in sent] == [names[0], names[2], names[3]]
+    assert not any(perm for _, perm in sent)                     # all to the Recycle Bin
+    assert window.store.paths == [names[1], names[3], names[4]]  # the failed one stays
+    assert len(errors) == 1
+    assert window.current_path == names[1]                       # playback went on with the next
+
+
+def test_delete_several_warns_when_no_recycle_bin(window, qapp, tmp_path, monkeypatch):
+    from almp import platform_win as pw
+    from almp import ui
+    lib = make_library(tmp_path / "lib", 1, 4)
+    window.scan_targets([str(lib)])
+    assert pump(qapp, lambda: not window._scan_active and len(window.store) == 4)
+    asked = []
+
+    class No:
+        def __init__(self, parent, title, message, yes_text=""):
+            asked.append((title, message, yes_text))
+
+        def setModal(self, _):
+            pass
+
+        def exec(self):
+            return ui.QDialog.DialogCode.Rejected
+
+        def deleteLater(self):
+            pass
+
+    sent = []
+    monkeypatch.setattr(ui, "CustomConfirmDialog", No)
+    monkeypatch.setattr(pw, "recycle_bin_available", lambda p: False)
+    monkeypatch.setattr(pw, "send_to_recycle_bin", lambda *a, **k: sent.append(a))
+    _select_rows(window, [1, 2])
+    window.delete_selected_file()
+    assert asked[0][0] == "Delete 2 Files Permanently?" and "PERMANENTLY" in asked[0][1]
+    assert sent == [] and len(window.store) == 4                 # "No" deletes nothing
+
+
+def test_ctrl_and_shift_click_select_several(window, qapp):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    from almp.store import make_entry
+    window.model.append_entries([make_entry(f"/m/{i}.mp3") for i in range(6)])
+    qapp.processEvents()
+    v = window.playlist
+
+    def click(row, mods=Qt.KeyboardModifier.NoModifier):
+        QTest.mouseClick(v.viewport(), Qt.MouseButton.LeftButton, mods, v.visualRect(window.model.index(row)).center())
+
+    click(1)
+    assert window._selected_source_rows() == [1]
+    click(3, Qt.KeyboardModifier.ControlModifier)
+    assert window._selected_source_rows() == [1, 3]
+    click(5, Qt.KeyboardModifier.ShiftModifier)
+    assert window._selected_source_rows() == [1, 3, 4, 5]
+    click(2)                                                     # a plain click: just that one again
+    assert window._selected_source_rows() == [2]
+
+
+def test_find_user_shaders(tmp_path):
+    from almp.player import MAX_USER_SHADERS, find_user_shaders
+    assert find_user_shaders(tmp_path / "missing") == []
+    (tmp_path / "b_FSRCNNX.glsl").write_text("x")
+    (tmp_path / "A_anime4k.GLSL").write_text("x")
+    (tmp_path / "c.hook").write_text("x")
+    (tmp_path / "readme.txt").write_text("x")
+    (tmp_path / "sub.glsl").mkdir()
+    assert [Path(p).name for p in find_user_shaders(tmp_path)] == ["A_anime4k.GLSL", "b_FSRCNNX.glsl", "c.hook"]
+    for i in range(MAX_USER_SHADERS + 5):
+        (tmp_path / f"z{i:02}.glsl").write_text("x")
+    assert len(find_user_shaders(tmp_path)) == MAX_USER_SHADERS
+
+
+def test_apply_user_shaders_commands():
+    from almp.player import apply_user_shaders
+    p = FakeMPV()
+    assert apply_user_shaders(p, ["C:/s/a.glsl", "C:/s/b.glsl"])
+    assert p.commands == [("change-list", "glsl-shaders", "clr", ""),
+                          ("change-list", "glsl-shaders", "append", "C:/s/a.glsl"),
+                          ("change-list", "glsl-shaders", "append", "C:/s/b.glsl")]
+    assert apply_user_shaders(None, []) is False
+
+
+def test_user_shaders_setting_off_by_default_and_live(window, qapp, tmp_path, monkeypatch):
+    from almp.settings import DEFAULTS, effective_settings
+    assert DEFAULTS["user_shaders"] is False and effective_settings({})["user_shaders"] is False
+    folder = tmp_path / "shaders"
+    folder.mkdir()
+    monkeypatch.setattr(window, "user_shader_folder", lambda: str(folder))
+    window.player.commands.clear()
+    assert window.set_user_shaders(True) == []                  # empty folder: nothing to load
+    assert window.player.commands == []
+    (folder / "FSRCNNX_x2.glsl").write_text("//!HOOK MAIN")
+    from almp.store import make_entry
+    video = str(tmp_path / "clip.mp4")
+    window.model.append_entries([make_entry(video), make_entry(str(tmp_path / "song.flac"))])
+    window.play_index(window.store.index_of(video))             # a new video looks at the folder again
+    assert ("change-list", "glsl-shaders", "append", str(folder / "FSRCNNX_x2.glsl")) in window.player.commands
+    window.player.commands.clear()
+    window.play_index(window.store.index_of(video))             # unchanged: mpv is not told again
+    assert not any(c[:2] == ("change-list", "glsl-shaders") for c in window.player.commands)
+    assert window.set_user_shaders(False) == []
+    assert window.player.commands[-1] == ("change-list", "glsl-shaders", "clr", "")
+    assert window.settings["user_shaders"] is False
+
+
+def test_settings_dialog_shows_shader_files(window, qapp, tmp_path, monkeypatch):
+    from almp.dialogs import SettingsDialog
+    folder = tmp_path / "shaders"
+    monkeypatch.setattr(window, "user_shader_folder", lambda: str(folder))
+    dlg = SettingsDialog(window)
+    assert dlg.user_shaders.isChecked() is False
+    assert "No shader files" in dlg.shader_found.text()
+    folder.mkdir()
+    (folder / "Anime4K_Upscale.glsl").write_text("x")
+    dlg.user_shaders.setChecked(True)
+    assert "Found 1 shader file(s): Anime4K_Upscale.glsl" in dlg.shader_found.text()
+    assert window.settings["user_shaders"] is True
+    dlg.close()

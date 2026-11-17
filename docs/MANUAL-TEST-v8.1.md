@@ -132,6 +132,18 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
 
+## 11. New in 8.2.5
+- [ ] Ctrl+click three playlist items, Shift+click a range, Ctrl+A: all of them are highlighted.
+- [ ] Delete removes all selected items from the list (files kept); the item after them is selected.
+- [ ] Right-click inside the selection: it stays selected; the menu offers Remove N items, Copy N file
+      paths and Delete N files.
+- [ ] Shift+Delete on files you do not need: ONE question for all of them, then they are in the Recycle Bin.
+      With files on a USB stick the question says how many will be deleted PERMANENTLY.
+- [ ] The playing track among the removed / deleted ones: the next track plays.
+- [ ] Settings > "Use my own shaders": off by default; "Open shaders folder" creates `shaders` next to ALMP.exe
+      and opens it. Put a .glsl file there (for example FSRCNNX): Settings says "Found 1 shader file(s)", the next
+      video uses it (sharper on a 480p/720p video); a broken .glsl file does not stop or black out the video.
+
 ## 10. New in 8.2.4
 **Data folder (nothing left on the PC)**
 - [ ] Fresh unzip to a NEW folder, start ALMP: a `Data` folder appears next to `ALMP.exe` with `settings.json`

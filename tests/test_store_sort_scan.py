@@ -254,3 +254,29 @@ def test_batches_also_go_out_on_time():
     clock.t = 0.2
     assert timer.due(5)
     assert not timer.due(0)
+
+def test_remove_rows_several_at_once_keeps_index_in_step():
+    from almp.store import PlaylistStore
+    s = PlaylistStore()
+    s.extend([f"/m/{i}.mp3" for i in range(6)] + ["/v/clip.mp4"])
+    s.kinds()                                           # built, so it must stay in step
+    v = s.version
+    assert s.remove_rows([5, 1, 3, 99, 1]) == ["/m/1.mp3", "/m/3.mp3", "/m/5.mp3"]
+    assert s.paths == ["/m/0.mp3", "/m/2.mp3", "/m/4.mp3", "/v/clip.mp4"]
+    assert len(s.search) == 4 and s.version > v
+    assert list(s.kinds()) == [1, 1, 1, 2]
+    assert not s.contains("/m/3.mp3") and s.contains("/m/4.mp3")
+    assert s.extend(["/m/3.mp3"]) == 1                 # can be added again
+    assert s.remove_rows([]) == []
+
+
+def test_remove_rows_100k_is_quick():
+    import time
+
+    from almp.store import PlaylistStore
+    s = PlaylistStore()
+    s.extend([f"/m/{i}.mp3" for i in range(100_000)])
+    t = time.perf_counter()
+    s.remove_rows(range(0, 100_000, 2))
+    assert len(s) == 50_000 and s.paths[0] == "/m/1.mp3"
+    assert time.perf_counter() - t < 2.0

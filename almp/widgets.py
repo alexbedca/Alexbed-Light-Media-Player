@@ -346,6 +346,7 @@ class PlaylistView(QTableView):
 
     Keys while the list has the keyboard focus:
       Up/Down, Page Up/Down, Home/End   move in the list (the list keeps them)
+      Ctrl+click, Shift+click, Shift+Up/Down, Ctrl+A   select several (to remove or delete them)
       Enter                             play the selected track
       Space, Left/Right                 play/pause and seek (passed on to the window)
       Delete                            remove from the list (the file is kept)
@@ -363,7 +364,7 @@ class PlaylistView(QTableView):
         self.setObjectName("playlistView")
         self.setShowGrid(False)
         self.setCornerButtonEnabled(False)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
@@ -388,6 +389,7 @@ class PlaylistView(QTableView):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setAccessibleName("Playlist")
         self.setAccessibleDescription("Enter plays the selected track. Delete removes it from the list. "
+                                      "Shift or Control with a click or the arrow keys selects several. "
                                       "The menu key opens more choices.")
 
     def update_row_height(self):

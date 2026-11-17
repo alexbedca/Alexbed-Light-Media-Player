@@ -68,6 +68,7 @@ DEFAULTS = {
     "gapless": False,              # v8.2.4: gapless playback (prefetch the next track)
     "audio_exclusive": False,      # v8.2.4: WASAPI exclusive mode (bit-perfect)
     "upscaling": "standard",       # v8.2.4: standard / sharp / high
+    "user_shaders": False,         # v8.2.5: load the user's own .glsl files from the "shaders" folder
 }
 
 
@@ -159,7 +160,7 @@ def effective_settings(raw):
     out = dict(DEFAULTS)
     for key in ("shuffle", "remove_played", "high_contrast", "keep_speed", "normalize_volume",
                 "volume_boost", "subtitle_background", "media_controls", "resume_long_files", "sleep_fade",
-                "play_fullscreen", "show_subtitles", "gapless", "audio_exclusive"):
+                "play_fullscreen", "show_subtitles", "gapless", "audio_exclusive", "user_shaders"):
         out[key] = _as_bool(raw.get(key, DEFAULTS[key]), DEFAULTS[key])
     max_volume = 150 if out["volume_boost"] else 100
     try:
