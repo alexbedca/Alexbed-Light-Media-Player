@@ -5,8 +5,9 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.3 released 2026-11-14 (Latest; fullscreen freeze fix, playlist hidden for one file,
-  "Always play videos in fullscreen", right-click Play/Add for files). Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
+- **Status:** v8.2.4 released 2026-11-17 (Latest; subtitles on/off setting, all files in a Data folder next to
+  ALMP.exe + log auto-clean, All/Video/Audio filter, Ctrl+S saves what is shown, format text, gapless, exclusive
+  audio, upscaling levels, Releases link in About, fullscreen music controls fix). v8.2.3 released 2026-11-14. Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
   (GPL-3.0-or-later). Release asset: `ALMP-vX.Y.Z-Portable.zip` + SHA-256. Not code-signed (SignPath declined
   for now; see `SIGNING.md`).
 - **Next:** see `ROADMAP.md` (open items: bigger fullscreen drawer/text for TVs, winget/Scoop submission from
