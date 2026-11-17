@@ -854,6 +854,9 @@ class MediaWindow(QMainWindow):
                 self.search_edit.clear()
                 return True
 
+        if (obj is getattr(self, "audio_art_label", None) and et == QEvent.Type.MouseMove
+                and self._is_fullscreen):
+            self._on_fs_activity()          # music: the art covers the video, same as moving over video
         if obj is getattr(self, "video", None):
             if et == QEvent.Type.MouseButtonDblClick:
                 self._toggle_fullscreen()
@@ -1175,6 +1178,11 @@ class MediaWindow(QMainWindow):
         self.audio_art_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.audio_art_label.customContextMenuRequested.connect(
             lambda p: self.show_video_menu(self.audio_art_label.mapTo(self.video, p)))
+        # The album art covers the whole video area while music plays. Without its own mouse tracking
+        # Qt never sends it (or the video under it) a plain mouse move, so the fullscreen controls
+        # would not come back when the mouse moves over the art.
+        self.audio_art_label.setMouseTracking(True)
+        self.audio_art_label.installEventFilter(self)
         self.audio_art_label.hide()
 
         self.welcome_widget = WelcomeScreen(self.video)

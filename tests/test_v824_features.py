@@ -608,3 +608,38 @@ def test_no_network_code_was_added():
         for b in banned:
             assert b not in text, f"{b} in {f.name}"
     assert os.path.exists(ROOT / "almp" / "ipc.py")      # local single-instance channel only (QLocalSocket)
+
+
+@qt
+def test_mouse_over_album_art_brings_back_the_fullscreen_controls(win, qapp, tmp_path):
+    """8.2.4 test report: in fullscreen with music playing, moving the mouse did nothing (only F worked).
+    The album art covers the video area; it must react to the mouse like the video does."""
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtTest import QTest
+    from test_qt_window import pump
+    song, clip, song2 = tmp_path / "song.flac", tmp_path / "clip.mp4", tmp_path / "song2.mp3"
+    for f in (song, clip, song2):
+        f.write_bytes(b"")
+    _add(win, [str(song), str(clip), str(song2)])
+    win.welcome_widget.hide()                    # as the normal "add files" path does
+    win._toggle_fullscreen()
+    try:
+        for row, is_music in ((0, True), (1, False), (2, True)):      # audio -> video -> audio
+            win.play_index(row)
+            assert pump(qapp, lambda m=is_music: win.audio_art_label.isVisible() is m), f"row {row}"
+            assert win._is_fullscreen                                  # never leaves fullscreen
+            win._hide_fullscreen_overlays()
+            qapp.processEvents()
+            assert not win.control_panel_widget.isVisible()
+            target = win.audio_art_label if is_music else win.video
+            centre = target.rect().center()
+            QTest.mouseMove(target, centre)
+            QTest.mouseMove(target, centre + QPoint(5, 5))
+            qapp.processEvents()
+            assert win.control_panel_widget.isVisible(), f"row {row}"
+            assert win.hide_timer.isActive()                           # and they hide again later
+            win._hide_fullscreen_overlays()
+            qapp.processEvents()
+            assert not win.control_panel_widget.isVisible()
+    finally:
+        win._toggle_fullscreen()
