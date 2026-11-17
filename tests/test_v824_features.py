@@ -48,6 +48,9 @@ def test_show_subtitles_is_remembered(tmp_path, monkeypatch):
 
 def test_mpv_options_subtitles_gapless_exclusive():
     o = player.mpv_options(1)
+    assert "gpu_shader_cache_dir" not in o
+    assert player.mpv_options(1, shader_cache_dir="D:/ALMP/Data/shader-cache")["gpu_shader_cache_dir"] == \
+        "D:/ALMP/Data/shader-cache"
     assert o["sub_visibility"] == "no"
     assert o["gapless_audio"] == "weak" and o["prefetch_playlist"] == "no"
     assert "audio_exclusive" not in o

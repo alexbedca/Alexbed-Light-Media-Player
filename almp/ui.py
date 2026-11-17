@@ -105,9 +105,11 @@ from .media import (
     write_playlist_file,
 )
 from .naturalsort import natural_name_key, natural_path_key
-from .paths import app_dir, get_app_icon_path, is_compiled
+from .paths import app_dir, get_app_icon_path, get_resource_path, get_settings_dir, is_compiled
 from .player import (
     BOOST_MAX_VOLUME,
+    BUILTIN_SHADER,
+    BUILTIN_SHADER_DIR,
     MPV_IMPORT_ERROR,
     NORMAL_MAX_VOLUME,
     SCALER_KEYS,
@@ -115,15 +117,18 @@ from .player import (
     VIDEO_SIZE_NAMES,
     apply_user_shaders,
     audio_format_text,
+    enhance_shaders,
     find_user_shaders,
     gapless_options,
     get_mpv_end_reason,
     mpv,
     mpv_options,
     next_video_size,
+    replaygain_mode,
     set_audio_filter,
     set_prop,
     subtitle_background_options,
+    too_many_dropped_frames,
     upscaling_properties,
     video_size_properties,
 )
@@ -224,6 +229,11 @@ class MediaWindow(QMainWindow):
         self._is_cursor_hidden = False
         self._dialog_active = False
         self._is_fullscreen = False
+        self._shaders_loaded = []        # shader files mpv has now (8.2.7 picture sharpening)
+        self._enhance_for = None         # the video the sharpening was decided for
+        self._enhance_paused = False     # E key: off for now (this run only)
+        self._enhance_blocked = False    # turned off because too many frames were dropped (this run)
+        self._enhance_watch = None       # (position, dropped frames) when the sharpening started
         self._fs_drawer_wanted = False
         self._panel_wanted = True        # playlist panel in the normal window (P / playlist button)
         self._panel_auto_hidden = False  # hidden because ALMP was opened with one file: comes back at 2+
@@ -442,6 +452,7 @@ class MediaWindow(QMainWindow):
         sc("Ctrl+S", self.save_playlist_m3u)
         sc(Qt.Key.Key_S, self.take_snapshot)
         sc(Qt.Key.Key_L, self.cycle_loop_mode)
+        sc(Qt.Key.Key_E, self.toggle_enhance)
         sc(Qt.Key.Key_F1, self.show_help)
         sc(Qt.Key.Key_Escape, lambda: self._toggle_fullscreen() if self._is_fullscreen else None)
         app_ctx = Qt.ShortcutContext.ApplicationShortcut
@@ -724,6 +735,8 @@ class MediaWindow(QMainWindow):
                 self.player.command("ao-reload")           # takes effect at once, not only at the next track
             except Exception:          # noqa: BLE001
                 log.debug("ao-reload refused", exc_info=True)
+        if self.current_path:
+            self._apply_replaygain(self.current_path)       # Automatic ReplayGain is off when bit-perfect
         self._status("Exclusive audio is on: other programs are silent while ALMP plays." if on
                      else "Exclusive audio is off.")
 
@@ -742,29 +755,145 @@ class MediaWindow(QMainWindow):
         """The "shaders" folder next to ALMP.exe (next to main.py when run from source)."""
         return os.path.join(app_dir(), SHADER_FOLDER)
 
-    def set_user_shaders(self, on):
-        """Settings > Video upscaling > Use my own shaders. Returns the files now in use."""
-        self.settings["user_shaders"] = bool(on)
-        update_settings(user_shaders=bool(on))
-        found = self._apply_user_shaders()
-        if not on:
-            self._status("Your own shaders are off.")
-        elif found:
-            self._status(f"Your own shaders: {len(found)} file(s) in use for videos.")
-        else:
-            self._status("No shader files (.glsl) in the shaders folder yet; nothing was loaded.")
-        return found
+    def builtin_shader_path(self):
+        """FSRCNNX, included with ALMP (shaders-builtin next to ALMP.exe / main.py)."""
+        return get_resource_path(os.path.join(BUILTIN_SHADER_DIR, BUILTIN_SHADER))
 
-    def _apply_user_shaders(self):
-        """Hand the files in the shaders folder to mpv (looked at again for every video, so files
-        added later are used from the next video on). Only mpv is told when the list changed."""
-        paths = find_user_shaders(self.user_shader_folder()) if self.settings.get("user_shaders") else []
-        if paths != getattr(self, "_shaders_loaded", []):
-            if apply_user_shaders(self.player, paths):
-                self._shaders_loaded = paths
-                if paths:
-                    log.info("User shaders in use: %s", ", ".join(os.path.basename(p) for p in paths))
+    def set_enhance(self, mode):
+        """Settings > Playback > Picture sharpening: auto / own / off. Returns the files now in use
+        (None while mpv does not know the video's size yet)."""
+        mode = mode if mode in ("auto", "own", "off") else "auto"
+        self.settings["enhance"] = mode
+        update_settings(enhance=mode)
+        self._enhance_paused = self._enhance_blocked = False
+        self._enhance_for = None
+        if mode == "off":
+            self._set_shaders([])
+            self._status("Picture sharpening is off.")
+            return []
+        return self._update_enhance(announce=True)
+
+    def toggle_enhance(self):
+        """E: picture sharpening off for now / on again, to compare (not saved)."""
+        if self.settings["enhance"] == "off":
+            self._status("Picture sharpening is off in Settings (Playback > Picture sharpening).", announce=True)
+            return None
+        # After ALMP turned it off itself (too many dropped frames), E means "try again".
+        self._enhance_paused = False if self._enhance_blocked else not self._enhance_paused
+        self._enhance_blocked = False
+        self._enhance_for = None
+        if self._enhance_paused:
+            self._set_shaders([])
+            self._enhance_watch = None
+            self._status("Picture sharpening is off for now. Press E to turn it on again.", announce=True)
+            return []
+        used = self._update_enhance(announce=True)
+        if used is None:
+            self._status("Picture sharpening is on again (for low-quality videos).", announce=True)
+        return used
+
+    def _set_shaders(self, paths):
+        """Tell mpv only when the list of shader files changes."""
+        paths = list(paths)
+        if paths != self._shaders_loaded and apply_user_shaders(self.player, paths):
+            self._shaders_loaded = paths
+            if paths:
+                log.info("Shaders in use: %s", ", ".join(os.path.basename(p) for p in paths))
+
+    def _update_enhance(self, announce=False):
+        """Decide the sharpening once per video, as soon as mpv knows how many lines it has:
+        720p or less gets the shader (built-in or the user's), HD videos get none."""
+        path = self.current_path
+        if not self.player or not path or is_audio_path(path):
+            return []
+        try:
+            height = getattr(self.player, "height", None)
+        except Exception:          # noqa: BLE001 - mpv between files
+            height = None
+        if not height:
+            return None                         # not known yet: the next tick tries again
+        mode = self.settings["enhance"]
+        if self._enhance_paused or self._enhance_blocked:
+            mode = "off"
+        own = find_user_shaders(self.user_shader_folder()) if mode == "own" else []
+        paths = enhance_shaders(mode, height, self.builtin_shader_path(), own)
+        self._set_shaders(paths)
+        self._enhance_for = path
+        self._enhance_watch = None
+        if paths:
+            try:
+                self._enhance_watch = (float(self.player.time_pos or 0), int(self.player.frame_drop_count or 0),
+                                       False)
+            except Exception:          # noqa: BLE001
+                self._enhance_watch = None
+        if announce and mode != "off":
+            if paths:
+                what = "FSRCNNX" if mode == "auto" else f"{len(paths)} shader file(s) of your own"
+                self._status(f"Picture sharpening is on for this {height}p video ({what}). E turns it off.",
+                             announce=True)
+            elif height > 720:
+                self._status(f"Picture sharpening is not needed: this video is {height}p (HD).", announce=True)
+            elif mode == "own":
+                self._status("No shader files (.glsl) in the shaders folder yet; nothing was loaded.")
+            else:
+                self._status("The built-in shader is missing from the ALMP folder; nothing was loaded.")
         return paths
+
+    def _check_enhance_speed(self):
+        """While a shader is in use: if the graphics card drops more than 5% of the frames in 6 seconds
+        of playback, turn the sharpening off for the rest of this run. The count starts only after the
+        first 1.5 s of playback: mpv prepares the shader then (about 3 s the first time, a one-off
+        burst of dropped frames that is not a sign of a slow graphics card)."""
+        pos0, drops0, armed = self._enhance_watch
+        try:
+            pos = self.player.time_pos
+            drops = self.player.frame_drop_count
+            fps = self.player.container_fps
+        except Exception:          # noqa: BLE001
+            return
+        if pos is None or drops is None:
+            return
+        if pos < pos0 or pos - pos0 > 30:         # a seek: start counting again
+            self._enhance_watch = (float(pos), int(drops), armed)
+            return
+        if not armed:
+            if pos - pos0 >= 1.5:
+                self._enhance_watch = (float(pos), int(drops), True)
+            return
+        if pos - pos0 < 6:
+            return
+        self._enhance_watch = None
+        dropped = int(drops) - drops0
+        if too_many_dropped_frames(dropped, pos - pos0, fps):
+            self._enhance_blocked = True
+            self._set_shaders([])
+            log.warning("Picture sharpening turned off: %d frames dropped in %.0f s", dropped, pos - pos0)
+            self._status(f"Picture sharpening turned off: the graphics card could not keep up ({dropped} "
+                         "frames dropped). Press E to try again.", announce=True)
+
+    def set_replaygain(self, mode):
+        """Settings > Music > ReplayGain: auto / track / album / off."""
+        mode = mode if mode in ("auto", "track", "album", "off") else "off"
+        self.settings["replaygain"] = mode
+        update_settings(replaygain=mode)
+        used = self._apply_replaygain(self.current_path) if self.current_path else None
+        texts = {"auto": "ReplayGain is automatic: album volume for an album in order, track volume otherwise.",
+                 "track": "ReplayGain uses the track volume.", "album": "ReplayGain uses the album volume.",
+                 "off": "ReplayGain is off."}
+        self._status(texts[mode])
+        return used
+
+    def _apply_replaygain(self, path):
+        """Set mpv's ReplayGain for `path` (from its place in the list); returns no / track / album."""
+        paths = self.store.paths
+        i = self.current_index
+        neighbours = []
+        if 0 <= i < len(paths) and paths[i] == path:
+            neighbours = [paths[i - 1] if i > 0 else None, paths[i + 1] if i + 1 < len(paths) else None]
+        mode = replaygain_mode(self.settings["replaygain"], path, neighbours, self.shuffle_enabled,
+                               self.settings["audio_exclusive"])
+        set_prop(self.player, "replaygain", mode)
+        return mode
 
     def open_user_shader_folder(self):
         """Create the shaders folder if needed (only on this click) and open it in Explorer."""
@@ -1953,7 +2082,8 @@ class MediaWindow(QMainWindow):
             self.player = mpv.MPV(**mpv_options(self.video.winId(), boost=s["volume_boost"],
                                                 subtitle_scale=s["subtitle_scale"],
                                                 show_subtitles=s["show_subtitles"], gapless=s["gapless"],
-                                                audio_exclusive=s["audio_exclusive"]))
+                                                audio_exclusive=s["audio_exclusive"],
+                                                shader_cache_dir=os.path.join(get_settings_dir(), "shader-cache")))
             self.player.volume = self.volume_slider.value()
             for k in SCALER_KEYS:                       # "Standard" = what mpv uses on its own
                 try:
@@ -1966,8 +2096,6 @@ class MediaWindow(QMainWindow):
                     log.debug("mpv option %s not readable", k, exc_info=True)
             if s["upscaling"] != "standard":
                 self._apply_upscaling(s["upscaling"])
-            if s["user_shaders"]:
-                self._apply_user_shaders()
 
             @self.player.event_callback("end-file")
             def handle_end_file(event):
@@ -2673,6 +2801,10 @@ class MediaWindow(QMainWindow):
                     self._error_streak = 0
             if self._format_path != self.current_path:
                 self._update_format_label()
+            if self._enhance_for != self.current_path:
+                self._update_enhance()
+            elif self._enhance_watch is not None:
+                self._check_enhance_speed()
         except Exception:          # noqa: BLE001 - mpv between files
             log.debug("poll failed", exc_info=True)
 
@@ -3199,8 +3331,10 @@ class MediaWindow(QMainWindow):
             already = self._in_end_handler and planned == path and not options
             try:
                 set_prop(self.player, "sub-visibility", bool(self.settings["show_subtitles"]))
-                if self.settings["user_shaders"] and not is_audio_path(path):
-                    self._apply_user_shaders()
+                if not is_audio_path(path):
+                    self._enhance_for = None          # decided again once mpv knows its size
+                    self._enhance_watch = None
+                self._apply_replaygain(path)
                 if not already:
                     self.player.loadfile(path, mode="replace", **options)
                     self._loadfile_count += 1

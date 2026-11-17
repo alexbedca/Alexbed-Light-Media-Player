@@ -27,8 +27,10 @@ from . import APP_TITLE, __version__
 from .logsetup import log
 from .paths import data_dir_is_portable, get_log_dir, get_resource_path, get_settings_dir
 from .settings import (
+    ENHANCE_CHOICES,
     LARGE_BUTTON_CHOICES,
     LOG_MODE_CHOICES,
+    REPLAYGAIN_CHOICES,
     SCALE_CHOICES,
     SUBTITLE_SIZE_CHOICES,
     UPSCALING_CHOICES,
@@ -52,11 +54,17 @@ UPSCALING_NOTE = ("Only matters when a video is smaller than the screen (for exa
                   "downloaded). High quality needs more graphics power and may stutter on slower "
                   "graphics cards.")
 
-SHADERS_NOTE = ("For advanced users. ALMP includes no shaders and downloads nothing: put mpv shader "
-                "files (for example FSRCNNX or Anime4K) in the folder yourself. They are used for videos, "
-                "on top of the upscaling above, and files added later are used from the next video on. "
-                "Neural-network shaders need a strong graphics card and can make videos stutter. A file "
-                "mpv cannot read is skipped.")
+SHADERS_NOTE = ("Automatic sharpens videos of 720p or less with FSRCNNX (by igv, LGPL-3.0, included "
+                "with ALMP; nothing is downloaded). HD videos are left as they are, and the shader only "
+                "works while the picture is enlarged. If the graphics card cannot keep up (more than 5% "
+                "of the frames dropped), ALMP turns it off by itself. Press E while watching to compare "
+                "with and without. \"My own shaders\" uses the .glsl files you put in the shaders folder "
+                "(for example Anime4K) instead, also only for low-quality videos.")
+REPLAYGAIN_NOTE = ("Uses the volume levels stored in the files (ReplayGain tags), so loud and quiet songs "
+                   "play at a similar volume. Automatic uses the album level when tracks of one folder play "
+                   "in order, and the track level otherwise. Files without tags play as they are, so it "
+                   "only helps when most of your music is tagged: otherwise the tagged albums just play "
+                   "quieter. Off by default. Automatic does nothing while Exclusive audio (bit-perfect) is on.")
 
 KEYBOARD_ROWS = [
     ("Space", "Play / pause"),
@@ -68,6 +76,7 @@ KEYBOARD_ROWS = [
     ("A", "Video size: Fit, Fill, Stretch"),
     ("S", "Save a picture of the video (in your Pictures folder)"),
     ("L", "Loop: Off, One (this track), All (whole playlist). Always Off when ALMP starts."),
+    ("E", "Picture sharpening off / on (low-quality videos), to compare"),
     ("P", "Show / hide the playlist"),
     ("Ctrl+F", "Search the playlist"),
     ("Ctrl+O / Ctrl+Shift+O", "Add files / add a folder"),
@@ -453,11 +462,19 @@ class SettingsDialog(QDialog):
         row.addWidget(self.upscaling, 1)
         lay.addLayout(row)
         lay.addWidget(_note(UPSCALING_NOTE))
-        self.user_shaders = QCheckBox("Use my own shaders (.glsl files in the \"shaders\" folder next to ALMP)")
-        self.user_shaders.setChecked(bool(s["user_shaders"]))
-        self.user_shaders.setAccessibleName("Use my own shaders from the shaders folder")
-        self.user_shaders.toggled.connect(self._toggle_user_shaders)
-        lay.addWidget(self.user_shaders)
+        row = QHBoxLayout()
+        lbl = QLabel("Picture sharpening:")
+        self.enhance = QComboBox()
+        en_values = [v for _l, v in ENHANCE_CHOICES]
+        for label, _v in ENHANCE_CHOICES:
+            self.enhance.addItem(label)
+        self.enhance.setCurrentIndex(en_values.index(s["enhance"]) if s["enhance"] in en_values else 0)
+        self.enhance.setAccessibleName("Picture sharpening for low-quality videos")
+        self.enhance.currentIndexChanged.connect(lambda i: self._enhance_changed(en_values[i]))
+        lbl.setBuddy(self.enhance)
+        row.addWidget(lbl)
+        row.addWidget(self.enhance, 1)
+        lay.addLayout(row)
         row = QHBoxLayout()
         self.shader_found = _note("")
         row.addWidget(self.shader_found, 1)
@@ -484,6 +501,20 @@ class SettingsDialog(QDialog):
         lay.addWidget(_note("For FLAC listeners with an external DAC or AV receiver: the sound goes to the "
                             "device untouched (no Windows mixing). While ALMP plays, OTHER programs and "
                             "Windows sounds are silent. ALMP's volume slider still works."))
+        row = QHBoxLayout()
+        lbl = QLabel("ReplayGain:")
+        self.replaygain = QComboBox()
+        rg_values = [v for _l, v in REPLAYGAIN_CHOICES]
+        for label, _v in REPLAYGAIN_CHOICES:
+            self.replaygain.addItem(label)
+        self.replaygain.setCurrentIndex(rg_values.index(s["replaygain"]) if s["replaygain"] in rg_values else 0)
+        self.replaygain.setAccessibleName("ReplayGain volume levelling")
+        self.replaygain.currentIndexChanged.connect(lambda i: win.set_replaygain(rg_values[i]))
+        lbl.setBuddy(self.replaygain)
+        row.addWidget(lbl)
+        row.addWidget(self.replaygain, 1)
+        lay.addLayout(row)
+        lay.addWidget(_note(REPLAYGAIN_NOTE))
         lay.addWidget(_line())
 
         # --- Subtitles ---
@@ -588,8 +619,8 @@ class SettingsDialog(QDialog):
         except RuntimeError:
             pass                      # the dialog is closed
 
-    def _toggle_user_shaders(self, on):
-        self.win.set_user_shaders(on)
+    def _enhance_changed(self, mode):
+        self.win.set_enhance(mode)
         self._update_shader_note()
 
     def _open_shader_folder(self):
