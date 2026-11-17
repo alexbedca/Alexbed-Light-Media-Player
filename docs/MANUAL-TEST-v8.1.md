@@ -10,7 +10,7 @@ Use your own test files (not private family media) or a library made with
 (hard links, so every file really plays and takes almost no disk space).
 
 Legend: **[ ]** to do. "Expected" says what must happen. If something else happens, copy
-`%LOCALAPPDATA%\ALMP\almp.log` (Settings > About ALMP > Open log folder) into the bug report.
+`almp.log` (8.2.4+: in the `Data` folder next to ALMP.exe; before: `%LOCALAPPDATA%\ALMP\almp.log`) (Settings > About ALMP > Open log folder) into the bug report.
 
 ## 0. Build and start
 - [ ] `Build-ALMP.bat` then `Package-ALMP.bat` finish without errors (check `build.log`). The zip contains
@@ -131,3 +131,48 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Save playlist as M3U and open it again with Add Media > Open a playlist file.
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
+
+## 10. New in 8.2.4
+**Data folder (nothing left on the PC)**
+- [ ] Fresh unzip to a NEW folder, start ALMP: a `Data` folder appears next to `ALMP.exe` with `settings.json`
+      after the first change; nothing new appears in `%APPDATA%\ALMP` or `%LOCALAPPDATA%\ALMP`.
+- [ ] On a PC that had 8.2.3: after the first 8.2.4 start, the old volume / settings are kept (copied into
+      `Data`), and `%APPDATA%\ALMP` / `%LOCALAPPDATA%\ALMP` are gone (or only hold files that are not ALMP's).
+- [ ] Copy ALMP into `C:\Program Files\...` (or a read-only USB stick) and start it: it still works; Settings >
+      Privacy and files says the folder cannot be written to and names the `%APPDATA%` folder it uses instead.
+- [ ] Close ALMP normally: `Data\almp.log` is gone. Settings > Log "Keep the last run": after closing, the
+      log is still there. "Off": no log file at all.
+- [ ] Remove-ALMP-Defaults.bat ("delete settings and log files" = Y) also empties and removes `Data`.
+
+**Subtitles**
+- [ ] A film with subtitles starts with subtitles HIDDEN (new default). Settings > Subtitles > Show subtitles
+      on: they appear at once, and on the next film too; still on after restarting ALMP.
+- [ ] Right-click the video > Subtitles > Off: the Settings box is unticked too (and the other way round).
+- [ ] "Load subtitle file..." shows the loaded subtitle (and turns Show subtitles on).
+
+**Playlist**
+- [ ] All / Video / Audio buttons under the search box: one click shows only that type; works together with
+      a search; the count shows "x of y". Instant on a 25,000-file list.
+- [ ] Ctrl+S saves the playlist. With a search or Video/Audio on, the dialog title says only the shown items
+      are saved, and the saved file holds only those.
+
+**Fullscreen with music and videos mixed**
+- [ ] Fullscreen on a video, then the next track is music: ALMP stays fullscreen and shows the album art (or
+      the ALMP logo on dark); the next video plays fullscreen again.
+
+**Music**
+- [ ] A FLAC track shows e.g. "FLAC - 24-bit / 96 kHz" (or "FLAC - 16-bit / 44.1 kHz") next to the time;
+      a video shows nothing there.
+- [ ] Settings > Gapless playback on: an album that runs on without pauses (live album, DJ mix) plays
+      without a gap between tracks. LISTEN; then Shuffle, Play next, Loop One and the sleep timer
+      "At the end of this track" still do what they say.
+- [ ] Settings > Exclusive audio on (with an external DAC / AV receiver if available): music plays; other
+      programs (a YouTube tab) are silent while ALMP plays; turning it off gives them sound back.
+
+**Video upscaling**
+- [ ] Settings > Video upscaling: Standard / Sharp / High quality on a 480p or 720p video in fullscreen: the
+      picture gets sharper; no stutter on this PC (High quality may stutter on slow graphics cards).
+
+**About**
+- [ ] Help > About shows "Newer versions: github.com/alexbedca/Alexbed-Light-Media-Player/releases" and
+      **Copy link** puts that address on the clipboard; nothing opens and nothing connects.

@@ -2405,8 +2405,9 @@ class MediaWindow(QMainWindow):
             self.format_label.hide()
             return
         try:
-            params = self.player["audio-params"] or {}
-            codec = self.player["audio-codec-name"] or ""
+            # Runtime properties: player["..."] would read mpv's *options* (python-mpv), so use attributes.
+            params = getattr(self.player, "audio_params", None) or {}
+            codec = getattr(self.player, "audio_codec_name", None) or ""
         except Exception:          # noqa: BLE001 - not known yet
             return
         if not isinstance(params, dict) or not params.get("samplerate"):

@@ -557,8 +557,8 @@ def test_format_text_for_the_playing_track_only(win, qapp):
     _add(win, ["/m/song.flac", "/m/clip.mp4"])
     win.play_index(0)
     win._tag_format = (24, 96000)
-    win.player.props["audio-params"] = {"samplerate": 96000, "format": "s32"}
-    win.player.props["audio-codec-name"] = "flac"
+    win.player.audio_params = {"samplerate": 96000, "format": "s32"}     # runtime properties, not options
+    win.player.audio_codec_name = "flac"
     win._poll_player_metrics()
     assert win.format_label.text() == "FLAC - 24-bit / 96 kHz" and not win.format_label.isHidden()
     win.play_index(1)

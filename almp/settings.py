@@ -1,7 +1,7 @@
 # Alexbed Light Media Player (ALMP)
 # Copyright (C) 2026 Alexander Bediako
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""settings.json in %APPDATA%\\ALMP: defaults, safe loading, migration from older versions, saving.
+"""settings.json in ALMP's Data folder (or %APPDATA%\\ALMP if that cannot be written): defaults, safe loading, migration from older versions, saving.
 
 Rules that never change:
   * The loop mode is never saved (always Off at start).

@@ -1,6 +1,7 @@
 # Alexbed Light Media Player (ALMP)
 
 A simple, free media player for Windows, built on the [mpv](https://mpv.io) playback engine.
+ALMP (A-L-M-P, Alexbed Light Media Player) is not related to AIMP.
 ALMP is made for people who just want to press play: big clear buttons, a dark modern look,
 and no accounts, ads or tracking.
 
@@ -32,13 +33,17 @@ and it is not a commercial product.
   the rows you can see, and search runs over a ready-made index. Measured numbers are in
   [Performance](#performance) below (and how to measure your own PC).
 - **Search** by file or folder name as you type (`Ctrl+F`); every word must match. Enter plays the first match.
+  **All / Video / Audio** buttons under the search box show one type of file (by file type, no disk reads),
+  together with the search. **Save the playlist** (`Ctrl+S`) as `.m3u8`; with a search or filter on, only what
+  is shown is saved.
 - **Right-click a track** for *Play*, *Play next*, *Move up / down*, *Remove from list*, *Show in folder*,
   *Copy file path*, *Delete file...* and *Sort*. Right-click the video for play, tracks, subtitles and size.
 - **Play next** queue, and **sorting** by name ("Track 2" before "Track 10", like Explorer), by folder, or reversed.
 - **Starts clean.** ALMP does not remember the last playlist, so it opens fast and stays light.
 - **Settings in one place** (gear button, `Ctrl+,`): high contrast, interface size, video size, *Remove played*,
   keep the playback speed, *Even out loud and quiet parts* (volume normaliser), volume up to 150%,
-  subtitle size and a dark box behind subtitles, media keys in the background, *Run at Startup*, and
+  show subtitles (remembered, off until you turn it on), subtitle size and a dark box behind subtitles,
+  video upscaling (Standard / Sharp / High quality, mpv's own scalers), media keys in the background, *Run at Startup*, and
   **Make ALMP my default player** / **"Play with ALMP" and "Add to ALMP playlist"** when you right-click
   files (one or many) or a folder in Explorer (your Windows account only, can be undone).
 - **High-contrast theme** (black, white and yellow) for every part of the window, including the welcome screen.
@@ -61,13 +66,25 @@ and it is not a commercial product.
   one plays. Selecting many files and pressing Enter works too.
 - **Shuffle, loop and "remove played".** **Loop: Off / One / All** (`L`). Loop All switches "Remove played" off so
   the list never empties. The loop choice is not remembered. "Remove played" is off for new installs.
+- **For music collections:** the playing bar shows the format of the playing track (for example
+  *FLAC - 24-bit / 96 kHz*); optional **gapless playback** (the next track is read ahead) and optional
+  **exclusive audio** (WASAPI exclusive, bit-perfect, for external DACs and AV receivers; other programs are
+  silent while ALMP plays). Both are off unless you switch them on.
 - **Album art**, hardware decoding, click-to-seek, floating fullscreen controls, audio tracks and subtitles,
   snapshots (`S`), Fit / Fill / Stretch (`A`).
 - **Help and About** inside the app (version, licence, third-party notices, *Open log folder*).
 - **Portable and offline.** No installer, no admin rights. ALMP never connects to the internet, has no
-  auto-update and no telemetry.
-- **Error log on your PC only.** If something goes wrong, ALMP keeps running and writes a short report to
-  `%LOCALAPPDATA%\ALMP\almp.log`. It is never sent anywhere (it can contain file names).
+  auto-update and no telemetry. *Help > About* shows the address of the Releases page with a *Copy link*
+  button (it only copies the text; ALMP does not open or check anything).
+- **Leaves nothing behind.** ALMP keeps its settings and a small log in a `Data` folder next to `ALMP.exe`, so
+  deleting the ALMP folder removes everything. Only if that folder cannot be written to (for example in
+  Program Files) does ALMP use `%APPDATA%\ALMP` and `%LOCALAPPDATA%\ALMP` instead (Settings says so).
+  Files from versions before 8.2.4 are moved into `Data` once. The Windows entries for Default apps, the
+  right-click menu and Run at Startup only exist if you turn them on, and can be removed in Settings or with
+  `Remove-ALMP-Defaults.bat`.
+- **Small log, cleared on close.** The log (at most 256 KB) is deleted when ALMP closes normally, unless
+  something went wrong during that run (then it is kept so the problem can be looked at). Settings >
+  *Privacy and files* can keep the last run or switch the log off. It is never sent anywhere.
 
 ## Download and run (Windows)
 
@@ -231,7 +248,8 @@ Reapplying later, or a paid option, is still open. Until then, please check each
 (see above). Details: [SIGNING.md](SIGNING.md).
 
 **Privacy:** ALMP works fully offline. It does not send any information to other computers or networks.
-Settings and the error log stay on your PC (`%APPDATA%\ALMP` and `%LOCALAPPDATA%\ALMP`).
+Settings and the small log stay in the `Data` folder next to `ALMP.exe` (or in `%APPDATA%\ALMP` and
+`%LOCALAPPDATA%\ALMP` when that folder cannot be written to).
 
 ## Community & Roadmap
 - See [ROADMAP.md](ROADMAP.md) for what is coming next.
