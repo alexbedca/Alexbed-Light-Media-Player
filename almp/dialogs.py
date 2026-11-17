@@ -595,7 +595,8 @@ def describe_engine(player):
     parts = []
     for prop, label in (("mpv-version", ""), ("ffmpeg-version", "FFmpeg ")):
         try:
-            v = player[prop]
+            # mpv *runtime* properties: python-mpv's player["..."] only reads options, so use attributes.
+            v = getattr(player, prop.replace("-", "_"))
             if v:
                 parts.append(f"{label}{v}")
         except Exception:          # noqa: BLE001

@@ -643,3 +643,19 @@ def test_mouse_over_album_art_brings_back_the_fullscreen_controls(win, qapp, tmp
             assert not win.control_panel_widget.isVisible()
     finally:
         win._toggle_fullscreen()
+
+
+def test_about_engine_line_reads_mpv_runtime_properties():
+    """python-mpv: player["x"] reads only options (always failed before 8.2.4); attributes read properties."""
+    from almp.dialogs import describe_engine
+
+    class Player:
+        mpv_version = "mpv v0.40.0"
+        ffmpeg_version = "n7.1"
+
+        def __getitem__(self, name):
+            raise AttributeError(name)               # what python-mpv does for a non-option
+
+    assert describe_engine(Player()) == "Playback engine: mpv v0.40.0, FFmpeg n7.1"
+    assert describe_engine(None) == ""
+    assert describe_engine(object()) == ""
