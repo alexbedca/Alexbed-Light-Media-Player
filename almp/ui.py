@@ -1212,6 +1212,7 @@ class MediaWindow(QMainWindow):
         self.format_label.setObjectName("dimLabel")
         self.format_label.setAccessibleName("Audio format")
         self.format_label.setToolTip("Format of the track that is playing (read from this file only)")
+        self.format_label.setContentsMargins(0, 0, 12, 0)          # a gap before the time
         self.format_label.hide()
         self.time_label = QLabel("00:00 / 00:00")
         self.time_label.setObjectName("timeLabel")
