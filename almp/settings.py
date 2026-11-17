@@ -17,6 +17,14 @@ from .paths import get_settings_dir
 
 SETTINGS_DIR = get_settings_dir()
 SETTINGS_PATH = SETTINGS_DIR / "settings.json"
+
+
+def use_folder(folder):
+    """Point settings.json and positions.json at `folder` (called once at start, after the Data
+    folder was chosen)."""
+    global SETTINGS_DIR, SETTINGS_PATH
+    SETTINGS_DIR = Path(folder)
+    SETTINGS_PATH = SETTINGS_DIR / "settings.json"
 # Optional "continue long files" positions (only written when that setting is switched on).
 POSITIONS_FILE_NAME = "positions.json"
 
@@ -33,6 +41,10 @@ SCALE_CHOICES = [("Normal (100%)", 1.0), ("Large (125%)", 1.25), ("Extra large (
 VIDEO_SIZE_CHOICES = [("Fit (whole picture)", "fit"), ("Fill (cropped)", "fill"), ("Stretch", "stretch")]
 LARGE_BUTTON_CHOICES = [("Automatic (big in fullscreen)", "auto"), ("Always big", "always"), ("Never", "never")]
 SUBTITLE_SIZE_CHOICES = [("Small", 0.8), ("Normal", 1.0), ("Large", 1.3), ("Huge", 1.7)]
+LOG_MODE_CHOICES = [("Clear it when ALMP closes (kept only after an error)", "clear"),
+                    ("Keep the last run", "keep"),
+                    ("Off (no log file)", "off")]
+UPSCALING_CHOICES = [("Standard", "standard"), ("Sharp", "sharp"), ("High quality", "high")]
 
 DEFAULTS = {
     "volume": 100,
@@ -51,6 +63,11 @@ DEFAULTS = {
     "sleep_fade": True,            # fade out during the last minute of the sleep timer
     "large_buttons": "auto",       # v8.2: start screen size in fullscreen: auto / always / never
     "play_fullscreen": False,      # v8.2.3: every video starts in fullscreen
+    "show_subtitles": False,       # v8.2.4: subtitles hidden until turned on (remembered)
+    "log_mode": "clear",           # v8.2.4: clear / keep / off
+    "gapless": False,              # v8.2.4: gapless playback (prefetch the next track)
+    "audio_exclusive": False,      # v8.2.4: WASAPI exclusive mode (bit-perfect)
+    "upscaling": "standard",       # v8.2.4: standard / sharp / high
 }
 
 
@@ -142,7 +159,7 @@ def effective_settings(raw):
     out = dict(DEFAULTS)
     for key in ("shuffle", "remove_played", "high_contrast", "keep_speed", "normalize_volume",
                 "volume_boost", "subtitle_background", "media_controls", "resume_long_files", "sleep_fade",
-                "play_fullscreen"):
+                "play_fullscreen", "show_subtitles", "gapless", "audio_exclusive"):
         out[key] = _as_bool(raw.get(key, DEFAULTS[key]), DEFAULTS[key])
     max_volume = 150 if out["volume_boost"] else 100
     try:
@@ -156,6 +173,10 @@ def effective_settings(raw):
     out["video_size"] = vs if vs in {v for _l, v in VIDEO_SIZE_CHOICES} else "fit"
     lb = raw.get("large_buttons", "auto")
     out["large_buttons"] = lb if lb in ("auto", "always", "never") else "auto"
+    lm = raw.get("log_mode", "clear")
+    out["log_mode"] = lm if lm in {v for _l, v in LOG_MODE_CHOICES} else "clear"
+    up = raw.get("upscaling", "standard")
+    out["upscaling"] = up if up in {v for _l, v in UPSCALING_CHOICES} else "standard"
     out["subtitle_scale"] = _as_float(raw.get("subtitle_scale", 1.0), 1.0, 0.5, 3.0)
     return out
 

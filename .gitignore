@@ -36,3 +36,6 @@ _backup/
 _testmedia/
 _screenmedia/
 Test-Launch.bat
+
+# ALMP data folder when run from source (settings, log)
+Data/

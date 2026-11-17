@@ -44,15 +44,23 @@ if defined APPDATA if exist "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Sta
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v AlexbedLightMediaPlayer /f >nul 2>&1
 
 echo.
-echo  ALMP also keeps a few small files for your account:
-echo    - settings (volume, shuffle, interface size...) in %%APPDATA%%\ALMP
-echo    - an error log (almp.log), if there ever was an error, in %%LOCALAPPDATA%%\ALMP
+echo  ALMP also keeps a few small files:
+echo    - since 8.2.4: settings and a small log in the "Data" folder next to ALMP.exe
+echo      (they go when you delete the ALMP folder)
+echo    - older versions, or when the ALMP folder could not be written to:
+echo      settings in %%APPDATA%%\ALMP and a log in %%LOCALAPPDATA%%\ALMP
 echo  Keep them if you plan to use ALMP again.
 echo.
 choice /c YN /m "Also delete these ALMP settings and log files"
 if errorlevel 2 goto :done
 
 REM Only ALMP's own files are deleted, by name; the folders are removed only if they are then empty.
+if exist "%~dp0Data\" (
+    for %%F in (settings.json settings.json.tmp positions.json positions.json.tmp startup_target.txt almp.log almp.log.1 media-controls-starting.flag) do (
+        if exist "%~dp0Data\%%F" del /q "%~dp0Data\%%F" >nul 2>&1
+    )
+    rmdir "%~dp0Data" >nul 2>&1
+)
 if defined APPDATA if exist "%APPDATA%\ALMP\" (
     for %%F in (settings.json settings.json.tmp positions.json positions.json.tmp startup_target.txt resume.json last_playlist.json last_playlist.tmp) do (
         if exist "%APPDATA%\ALMP\%%F" del /q "%APPDATA%\ALMP\%%F" >nul 2>&1

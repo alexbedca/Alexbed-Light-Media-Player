@@ -10,8 +10,25 @@ import sys
 
 from . import __version__
 from . import platform_win as pw
-from .logsetup import install_hooks, log, seconds_since_start, set_exception_notify, setup_logging
-from .paths import SOURCE_ROOT, get_app_icon_path, is_compiled
+from . import settings as settings_file
+from .datafolder import migrate_legacy_files
+from .logsetup import (
+    finish_logging,
+    install_hooks,
+    log,
+    seconds_since_start,
+    set_exception_notify,
+    setup_logging,
+    start_new_run_log,
+)
+from .paths import (
+    SOURCE_ROOT,
+    get_app_icon_path,
+    init_data_dir,
+    is_compiled,
+    legacy_log_dir,
+    legacy_settings_dir,
+)
 from .settings import effective_settings, load_settings, migrate_settings_file, remove_legacy_history_files
 
 # --- Linux: embed mpv through X11 ---
@@ -76,9 +93,26 @@ def _spawn_restart():
         log.exception("Could not restart ALMP")
 
 
+def prepare_data_folder():
+    """Choose where ALMP keeps its files (Data next to ALMP.exe, or the old folders if that cannot be
+    written), move files from older versions there, and start the log. Returns (folder, portable,
+    migration result, log mode)."""
+    folder, portable = init_data_dir()
+    settings_file.use_folder(folder)
+    moved = migrate_legacy_files(folder, legacy_settings_dir(), legacy_log_dir()) if portable else None
+    log_mode = effective_settings(load_settings())["log_mode"]
+    setup_logging(log_mode)
+    if not portable:
+        log.info("The Data folder next to ALMP cannot be written to; using %s", folder)
+    if moved and (moved["copied"] or moved["removed"] or moved["error"]):
+        log.info("Files from an older ALMP: copied %s, removed %d, error: %s",
+                 moved["copied"], len(moved["removed"]), moved["error"] or "none")
+    return folder, portable, moved, log_mode
+
+
 def main(argv=None):
     argv = list(sys.argv if argv is None else argv)
-    setup_logging()
+    _folder, _portable, _moved, log_mode = prepare_data_folder()
     install_hooks()
     if sys.platform != "win32":
         try:
@@ -105,6 +139,8 @@ def main(argv=None):
         if not send_paths_to_running_instance(message):
             log.warning("Could not reach the running ALMP; %d file(s) were not passed on", len(cli_paths))
         return 0
+    if log_mode == "keep":
+        start_new_run_log()
 
     pw.set_app_user_model_id()
 
@@ -176,6 +212,7 @@ def main(argv=None):
         window.open_external(cli_paths, wait_ms=0)
     window.attach_ipc_server(ipc)
     rc = app.exec()
+    log_mode = window.settings.get("log_mode", log_mode)
     restart = window._restart_requested
     if restart:
         lock_file.unlock()            # the new ALMP must be able to take the single-instance lock
@@ -184,6 +221,8 @@ def main(argv=None):
         except RuntimeError:
             pass
         _spawn_restart()
+    # A normal close: the log is cleared unless this run wrote an error (Settings > Privacy).
+    finish_logging(log_mode)
     if window.any_scan_running():
         # A folder scan is stuck on a slow drive: exit at once instead of letting Qt abort.
         logging.shutdown()
