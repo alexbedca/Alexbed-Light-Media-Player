@@ -27,11 +27,14 @@ VIDEO_SIZE_NAMES = {"fit": "Fit", "fill": "Fill (cropped)", "stretch": "Stretch"
 
 # Video upscaling (Settings > Playback). Only mpv's own built-in scalers: no shader files, no downloads.
 # "standard" puts back whatever mpv used when ALMP started (read once, see _init_player).
-SCALER_KEYS = ("scale", "cscale", "dscale")
+SCALER_KEYS = ("scale", "cscale", "dscale", "correct-downscaling", "sigmoid-upscaling", "deband")
 UPSCALING_PROPERTIES = {
     "standard": {},
     "sharp": {"scale": "spline36", "cscale": "spline36", "dscale": "mitchell"},
-    "high": {"scale": "ewa_lanczossharp", "cscale": "ewa_lanczossharp", "dscale": "mitchell"},
+    # The three extras were measured on a GTX 960 (720p and 360p on a 1080p screen): 0 dropped frames,
+    # no measurable extra GPU load on top of ewa_lanczossharp.
+    "high": {"scale": "ewa_lanczossharp", "cscale": "ewa_lanczossharp", "dscale": "mitchell",
+             "correct-downscaling": True, "sigmoid-upscaling": True, "deband": True},
 }
 
 

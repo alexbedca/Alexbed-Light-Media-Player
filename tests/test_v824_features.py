@@ -65,7 +65,10 @@ def test_upscaling_uses_only_built_in_scalers():
     assert player.upscaling_properties("standard") == {}
     assert player.upscaling_properties("sharp") == {"scale": "spline36", "cscale": "spline36", "dscale": "mitchell"}
     assert player.upscaling_properties("high") == {
-        "scale": "ewa_lanczossharp", "cscale": "ewa_lanczossharp", "dscale": "mitchell"}
+        "scale": "ewa_lanczossharp", "cscale": "ewa_lanczossharp", "dscale": "mitchell",
+        "correct-downscaling": True, "sigmoid-upscaling": True, "deband": True}
+    # every key High quality changes is one "Standard" puts back
+    assert set(player.upscaling_properties("high")) <= set(player.SCALER_KEYS)
     assert player.upscaling_properties("nonsense", std) == std
     for level in ("sharp", "high"):              # never a shader file or anything to download
         assert "glsl-shaders" not in player.upscaling_properties(level)
@@ -544,11 +547,12 @@ def test_exclusive_audio_and_upscaling_reach_mpv(win):
     win.set_audio_exclusive(True)
     assert win.player.props["audio-exclusive"] is True and ("ao-reload",) in win.player.commands
     assert settings.effective_settings(settings.load_settings())["audio_exclusive"] is True
-    win._scaler_defaults = {"scale": "lanczos"}
+    win._scaler_defaults = {"scale": "lanczos", "deband": False}
     win.set_upscaling("high")
     assert win.player.props["scale"] == "ewa_lanczossharp" and win.player.props["dscale"] == "mitchell"
+    assert win.player.props["deband"] is True
     win.set_upscaling("standard")
-    assert win.player.props["scale"] == "lanczos"
+    assert win.player.props["scale"] == "lanczos" and win.player.props["deband"] is False
     assert settings.effective_settings(settings.load_settings())["upscaling"] == "standard"
 
 

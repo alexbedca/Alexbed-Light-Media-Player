@@ -1852,7 +1852,9 @@ class MediaWindow(QMainWindow):
             for k in SCALER_KEYS:                       # "Standard" = what mpv uses on its own
                 try:
                     v = self.player[k]
-                    if v:
+                    if k in ("scale", "cscale", "dscale") and not isinstance(v, str):
+                        v = ""          # cscale's default is empty ("same as scale"); python-mpv reads it as 0
+                    if v is not None:
                         self._scaler_defaults[k] = v
                 except Exception:          # noqa: BLE001
                     log.debug("mpv option %s not readable", k, exc_info=True)
