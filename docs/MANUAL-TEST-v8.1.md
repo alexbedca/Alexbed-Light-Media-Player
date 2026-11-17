@@ -132,6 +132,17 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
 
+## 13. New in 8.2.7
+- [ ] Play a 480p or 360p video in fullscreen: the picture is sharper than in 8.2.6. The very first time on a PC
+      it can stand still for about 3 seconds while the shader is prepared (later about 1 second).
+- [ ] Press E: "off for now" and the picture is softer; E again: on. Then play a 1080p video: no shader
+      (E says "not needed: this video is 1080p").
+- [ ] Settings > Playback > Picture sharpening: Automatic / My own shaders / Off all work; Off stays off.
+- [ ] ReplayGain is Off on a new install. Set it to Automatic, play an album with ReplayGain tags in order:
+      the album keeps its loud/quiet differences; shuffle: track volume. With Exclusive audio on, Automatic
+      does nothing.
+- [ ] The Data folder next to ALMP.exe now also has a shader-cache folder (deleting it is safe).
+
 ## 12. New in 8.2.6
 - [ ] Play a video in fullscreen, click the gear: Settings opens on top of the video.
 - [ ] With Settings still open: Pause/Play, Next, the volume, leave fullscreen and the close X all

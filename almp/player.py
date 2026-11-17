@@ -39,7 +39,7 @@ UPSCALING_PROPERTIES = {
 
 
 def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=None, proc_version=None,
-                show_subtitles=False, gapless=False, audio_exclusive=False):
+                show_subtitles=False, gapless=False, audio_exclusive=False, shader_cache_dir=None):
     """The options ALMP starts mpv with. Pure: easy to check in tests.
     The volume normaliser and the subtitle box are switched on after start (set_audio_filter,
     subtitle_background_options), so an mpv build without them can never stop playback from starting."""
@@ -68,6 +68,10 @@ def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=Non
         sub_visibility="yes" if show_subtitles else "no",
     )
     opts.update(gapless_options(gapless))
+    if shader_cache_dir:
+        # Prepared shaders are kept here, so FSRCNNX takes ~3 s to prepare only the first time
+        # (measured on a GTX 960: 3.2 s first run, 1.2 s after). In ALMP's own Data folder: portable.
+        opts["gpu_shader_cache_dir"] = str(shader_cache_dir)
     if audio_exclusive:
         opts["audio_exclusive"] = "yes"
     if platform.startswith("linux"):
@@ -130,6 +134,48 @@ def apply_user_shaders(player, paths):
     except Exception:          # noqa: BLE001 - mpv raises its own error types
         log.warning("mpv did not accept the shader list %r", paths, exc_info=True)
         return False
+
+
+# 8.2.7: picture sharpening for low-quality videos. ALMP includes ONE shader file, FSRCNNX x2 by igv
+# (LGPL-3.0-or-later, see LICENSES/LGPL-3.0.txt and THIRD-PARTY-NOTICES.txt) in the "shaders-builtin"
+# folder; nothing is downloaded. ALMP hands it to mpv only for videos of LOW_QUALITY_MAX_HEIGHT lines
+# or fewer, and the shader itself only runs while mpv enlarges the picture 1.3x or more.
+BUILTIN_SHADER_DIR = "shaders-builtin"
+BUILTIN_SHADER = "FSRCNNX_x2_16-0-4-1.glsl"
+LOW_QUALITY_MAX_HEIGHT = 720
+
+
+def enhance_shaders(mode, height, builtin_path, own_paths):
+    """The shader files to use for a video `height` lines high. auto: the built-in FSRCNNX;
+    own: the user's files; off (or an HD video, or a height not known): none."""
+    if mode not in ("auto", "own") or not height or height > LOW_QUALITY_MAX_HEIGHT:
+        return []
+    if mode == "auto":
+        return [builtin_path] if builtin_path and os.path.isfile(builtin_path) else []
+    return list(own_paths)
+
+
+def too_many_dropped_frames(dropped, seconds, fps):
+    """True when the graphics card cannot keep up: more than 5% of the frames (and at least 10)
+    were dropped in `seconds` of playback."""
+    fps = fps if isinstance(fps, (int, float)) and fps > 0 else 30.0
+    return seconds > 0 and dropped > max(10, 0.05 * fps * seconds)
+
+
+def replaygain_mode(setting, path, neighbours, shuffle, exclusive):
+    """mpv's replaygain value ("no" / "track" / "album") for `path`.
+    auto: the album volume when tracks of one folder play in list order (a neighbour in the list is
+    in the same folder and shuffle is off), the track volume otherwise, and none with exclusive
+    (bit-perfect) audio, which must reach the DAC untouched."""
+    if setting in ("track", "album"):
+        return setting
+    if setting != "auto" or exclusive:
+        return "no"
+    if not shuffle and path:
+        folder = os.path.dirname(path)
+        if any(n and n != path and os.path.dirname(n) == folder for n in neighbours):
+            return "album"
+    return "track"
 
 
 def upscaling_properties(level, standard=None):

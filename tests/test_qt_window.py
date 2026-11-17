@@ -615,41 +615,161 @@ def test_apply_user_shaders_commands():
     assert apply_user_shaders(None, []) is False
 
 
-def test_user_shaders_setting_off_by_default_and_live(window, qapp, tmp_path, monkeypatch):
-    from almp.settings import DEFAULTS, effective_settings
-    assert DEFAULTS["user_shaders"] is False and effective_settings({})["user_shaders"] is False
+def test_enhance_and_replaygain_helpers():
+    import almp.player as pl
+    from almp.player import LOW_QUALITY_MAX_HEIGHT, enhance_shaders, replaygain_mode, too_many_dropped_frames
+    b = pl.__file__                                         # any existing file stands in for the shader
+    assert enhance_shaders("auto", 480, b, []) == [b]
+    assert enhance_shaders("auto", LOW_QUALITY_MAX_HEIGHT, b, []) == [b]
+    assert enhance_shaders("auto", 1080, b, []) == []       # HD: left alone
+    assert enhance_shaders("auto", None, b, []) == []       # size not known yet
+    assert enhance_shaders("auto", 360, "C:/missing.glsl", []) == []
+    assert enhance_shaders("own", 360, b, ["x.glsl"]) == ["x.glsl"]
+    assert enhance_shaders("off", 360, b, ["x.glsl"]) == []
+    assert not too_many_dropped_frames(9, 6, 30)            # at least 10
+    assert not too_many_dropped_frames(9, 6, None)
+    assert too_many_dropped_frames(11, 6, 30)               # 5% of 180 = 9, so 11 is too many
+    assert not too_many_dropped_frames(20, 20, 30) and too_many_dropped_frames(31, 20, 30)
+    album = ["/m/A/1.flac", "/m/A/2.flac"]
+    assert replaygain_mode("auto", album[0], [None, album[1]], False, False) == "album"
+    assert replaygain_mode("auto", album[0], [None, album[1]], True, False) == "track"   # shuffle
+    assert replaygain_mode("auto", album[0], [None, "/m/B/1.flac"], False, False) == "track"
+    assert replaygain_mode("auto", album[0], [None, album[1]], False, True) == "no"     # bit-perfect
+    assert replaygain_mode("album", album[0], [], True, True) == "album"
+    assert replaygain_mode("track", album[0], [], False, False) == "track"
+    assert replaygain_mode("off", album[0], [None, album[1]], False, False) == "no"
+
+
+def test_enhance_and_replaygain_settings_defaults_and_migration():
+    from almp.settings import effective_settings
+    assert effective_settings({})["enhance"] == "auto"
+    assert effective_settings({})["replaygain"] == "off"                     # Off by default
+    assert effective_settings({"user_shaders": True})["enhance"] == "own"     # 8.2.5 choice kept
+    assert effective_settings({"user_shaders": True, "enhance": "off"})["enhance"] == "off"
+    assert effective_settings({"enhance": "max", "replaygain": 3})["enhance"] == "auto"
+    assert effective_settings({"replaygain": 3})["replaygain"] == "off"
+    assert effective_settings({"replaygain": "album"})["replaygain"] == "album"
+
+
+def _shader_cmds(player):
+    return [c for c in player.commands if c[:2] == ("change-list", "glsl-shaders")]
+
+
+def test_sharpening_only_for_low_quality_video(window, qapp, tmp_path, monkeypatch):
+    from almp.store import make_entry
+    builtin = tmp_path / "FSRCNNX_x2_16-0-4-1.glsl"
+    builtin.write_text("//!HOOK LUMA")
+    monkeypatch.setattr(window, "builtin_shader_path", lambda: str(builtin))
+    assert window.settings["enhance"] == "auto"
+    low, hd = str(tmp_path / "old 480p.mp4"), str(tmp_path / "new 1080p.mp4")
+    window.model.append_entries([make_entry(low), make_entry(hd)])
+    p = window.player
+    window.play_index(window.store.index_of(low))
+    p.commands.clear()
+    window._poll_player_metrics()                   # height not known yet: nothing decided
+    assert _shader_cmds(p) == [] and window._enhance_for is None
+    p.height, p.frame_drop_count, p.container_fps = 480, 0, 30.0
+    window._poll_player_metrics()
+    assert _shader_cmds(p)[-1] == ("change-list", "glsl-shaders", "append", str(builtin))
+    assert window._enhance_for == low and window._enhance_watch == (0.0, 0, False)
+    p.time_pos, p.frame_drop_count = 2, 56          # the one-off burst while mpv prepares the shader
+    window._poll_player_metrics()
+    assert window._enhance_watch == (2.0, 56, True) and not window._enhance_blocked
+    p.time_pos, p.frame_drop_count = 9, 59          # then 3 drops in 7 s: fine, keeps running
+    window._poll_player_metrics()
+    assert window._enhance_watch is None and not window._enhance_blocked
+    p.commands.clear()
+    window.play_index(window.store.index_of(hd))
+    p.height = 1080
+    window._poll_player_metrics()
+    assert _shader_cmds(p) == [("change-list", "glsl-shaders", "clr", "")]   # HD: shader removed
+    p.commands.clear()
+    window.play_index(window.store.index_of(hd))    # same HD again: mpv is not told twice
+    window._poll_player_metrics()
+    assert _shader_cmds(p) == []
+
+
+def test_sharpening_turns_off_when_frames_drop_and_e_key(window, qapp, tmp_path, monkeypatch):
+    from almp.store import make_entry
+    builtin = tmp_path / "f.glsl"
+    builtin.write_text("x")
+    monkeypatch.setattr(window, "builtin_shader_path", lambda: str(builtin))
+    vids = [str(tmp_path / f"v{i}.mp4") for i in range(2)]
+    window.model.append_entries([make_entry(v) for v in vids])
+    p = window.player
+    window.play_index(0)
+    p.height, p.frame_drop_count, p.container_fps = 360, 0, 30.0
+    window._poll_player_metrics()
+    p.time_pos = 2
+    window._poll_player_metrics()                   # starts counting
+    p.time_pos, p.frame_drop_count = 8.5, 40        # 40 of ~195 frames dropped
+    window._poll_player_metrics()
+    assert window._enhance_blocked and window._shaders_loaded == []
+    assert "turned off" in window.status_label.text()
+    window.play_index(1)                            # stays off for this run
+    p.time_pos = 0
+    window._poll_player_metrics()
+    assert window._shaders_loaded == []
+    assert window.toggle_enhance() == [str(builtin)]    # E: try again
+    assert not window._enhance_blocked
+    assert window.toggle_enhance() == [] and window._enhance_paused             # E: off for now
+    assert "off for now" in window.status_label.text()
+    window.set_enhance("off")
+    assert window.settings["enhance"] == "off" and window.toggle_enhance() is None
+
+
+def test_own_shaders_mode_uses_the_folder(window, qapp, tmp_path, monkeypatch):
+    from almp.store import make_entry
     folder = tmp_path / "shaders"
     folder.mkdir()
+    (folder / "Anime4K.glsl").write_text("x")
     monkeypatch.setattr(window, "user_shader_folder", lambda: str(folder))
-    window.player.commands.clear()
-    assert window.set_user_shaders(True) == []                  # empty folder: nothing to load
-    assert window.player.commands == []
-    (folder / "FSRCNNX_x2.glsl").write_text("//!HOOK MAIN")
+    v = str(tmp_path / "anime 480p.mkv")
+    window.model.append_entries([make_entry(v)])
+    window.play_index(0)
+    window.player.height = 480
+    assert window.set_enhance("own") == [str(folder / "Anime4K.glsl")]
+    assert window.settings["enhance"] == "own"
+
+
+def test_replaygain_follows_album_order(window, qapp, tmp_path):
     from almp.store import make_entry
-    video = str(tmp_path / "clip.mp4")
-    window.model.append_entries([make_entry(video), make_entry(str(tmp_path / "song.flac"))])
-    window.play_index(window.store.index_of(video))             # a new video looks at the folder again
-    assert ("change-list", "glsl-shaders", "append", str(folder / "FSRCNNX_x2.glsl")) in window.player.commands
-    window.player.commands.clear()
-    window.play_index(window.store.index_of(video))             # unchanged: mpv is not told again
-    assert not any(c[:2] == ("change-list", "glsl-shaders") for c in window.player.commands)
-    assert window.set_user_shaders(False) == []
-    assert window.player.commands[-1] == ("change-list", "glsl-shaders", "clr", "")
-    assert window.settings["user_shaders"] is False
+    album = [str(tmp_path / "Album" / f"{i:02} song.flac") for i in range(1, 4)]
+    single = str(tmp_path / "Singles" / "hit.mp3")
+    window.model.append_entries([make_entry(p) for p in album + [single]])
+    window.shuffle_checkbox.setChecked(False)
+    window.play_index(1)
+    assert window.player.props["replaygain"] == "no"         # Off by default
+    window.set_replaygain("auto")
+    window.play_index(1)
+    assert window.player.props["replaygain"] == "album"
+    window.play_index(3)
+    assert window.player.props["replaygain"] == "track"      # the only file of its folder
+    window.shuffle_checkbox.setChecked(True)
+    window.play_index(0)
+    assert window.player.props["replaygain"] == "track"      # shuffle: tracks of many albums
+    window.set_audio_exclusive(True)
+    assert window.player.props["replaygain"] == "no"         # bit-perfect stays untouched
+    window.set_audio_exclusive(False)
+    assert window.set_replaygain("album") == "album" and window.settings["replaygain"] == "album"
+    assert window.set_replaygain("off") == "no"
 
 
-def test_settings_dialog_shows_shader_files(window, qapp, tmp_path, monkeypatch):
+def test_settings_dialog_sharpening_and_replaygain(window, qapp, tmp_path, monkeypatch):
     from almp.dialogs import SettingsDialog
     folder = tmp_path / "shaders"
     monkeypatch.setattr(window, "user_shader_folder", lambda: str(folder))
     dlg = SettingsDialog(window)
-    assert dlg.user_shaders.isChecked() is False
+    assert dlg.enhance.currentIndex() == 0                  # Automatic
+    assert dlg.replaygain.currentText() == "Off"            # Off by default
     assert "No shader files" in dlg.shader_found.text()
     folder.mkdir()
     (folder / "Anime4K_Upscale.glsl").write_text("x")
-    dlg.user_shaders.setChecked(True)
+    dlg.enhance.setCurrentIndex(1)
+    assert window.settings["enhance"] == "own"
     assert "Found 1 shader file(s): Anime4K_Upscale.glsl" in dlg.shader_found.text()
-    assert window.settings["user_shaders"] is True
+    dlg.replaygain.setCurrentIndex(0)
+    assert window.settings["replaygain"] == "auto"
     dlg.close()
 
 

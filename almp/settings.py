@@ -45,6 +45,11 @@ LOG_MODE_CHOICES = [("Clear it when ALMP closes (kept only after an error)", "cl
                     ("Keep the last run", "keep"),
                     ("Off (no log file)", "off")]
 UPSCALING_CHOICES = [("Standard", "standard"), ("Sharp", "sharp"), ("High quality", "high")]
+ENHANCE_CHOICES = [("Automatic (built-in FSRCNNX, low-quality videos only)", "auto"),
+                   ("My own shaders (shaders folder), low-quality videos only", "own"),
+                   ("Off", "off")]
+REPLAYGAIN_CHOICES = [("Automatic (album or track volume)", "auto"), ("Track volume", "track"),
+                      ("Album volume", "album"), ("Off", "off")]
 
 DEFAULTS = {
     "volume": 100,
@@ -68,7 +73,10 @@ DEFAULTS = {
     "gapless": False,              # v8.2.4: gapless playback (prefetch the next track)
     "audio_exclusive": False,      # v8.2.4: WASAPI exclusive mode (bit-perfect)
     "upscaling": "standard",       # v8.2.4: standard / sharp / high
-    "user_shaders": False,         # v8.2.5: load the user's own .glsl files from the "shaders" folder
+    "user_shaders": False,         # v8.2.5: load the user's own .glsl files (8.2.7: read only to migrate)
+    "enhance": "auto",             # v8.2.7: picture sharpening for low-quality videos: auto / own / off
+    "replaygain": "off",           # v8.2.7: ReplayGain tags: auto / track / album / off. Off by default:
+                                   # with a partly tagged library it makes the tagged albums quieter
 }
 
 
@@ -179,6 +187,12 @@ def effective_settings(raw):
     up = raw.get("upscaling", "standard")
     out["upscaling"] = up if up in {v for _l, v in UPSCALING_CHOICES} else "standard"
     out["subtitle_scale"] = _as_float(raw.get("subtitle_scale", 1.0), 1.0, 0.5, 3.0)
+    en = raw.get("enhance")
+    if en not in {v for _l, v in ENHANCE_CHOICES}:
+        en = "own" if out["user_shaders"] else "auto"     # 8.2.5 "Use my own shaders" carries over
+    out["enhance"] = en
+    rg = raw.get("replaygain", "off")
+    out["replaygain"] = rg if rg in {v for _l, v in REPLAYGAIN_CHOICES} else "off"
     return out
 
 

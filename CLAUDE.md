@@ -5,7 +5,9 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.6 released 2026-11-17 (Latest; Settings is no longer modal, so the player's buttons work
+- **Status:** v8.2.7 released 2026-11-17 (Latest; picture sharpening: built-in FSRCNNX in `shaders-builtin/`
+  for videos <= 720p, auto switch-off on dropped frames, E key, shader cache in Data; ReplayGain setting, Off by
+  default). v8.2.6 released 2026-11-17 (Settings is no longer modal, so the player's buttons work
   while it is open, even in fullscreen; Settings is wide enough for every line). v8.2.5 released 2026-11-17 (select several playlist items to remove/delete, optional
   user shaders from a `shaders` folder next to ALMP.exe). v8.2.4 released 2026-11-17 earlier the same day (subtitles on/off setting, all files in a Data folder next to
   ALMP.exe + log auto-clean, All/Video/Audio filter, Ctrl+S saves what is shown, format text, gapless, exclusive
@@ -59,6 +61,13 @@ Set-/Remove-ALMP-Defaults.bat  shipped in the zip: default-player registration /
 - Claude in Chrome for GitHub web-only settings (social preview).
 
 ## Decisions and gotchas
+- **Never start a copy of the built ALMP.exe outside the installed folder for a test** (e.g. a temp copy):
+  at start ALMP re-points Alexander's Explorer right-click entries ("Play with ALMP") to whichever exe runs.
+  If it happens, start the installed copy once (it points them back) and check HKCU\Software\Classes. Test
+  builds from source (drive scripts) or in the installed copy instead (2026-11-17).
+- **ReplayGain is Off by default (8.2.7):** in Alexander's library only 9 of 182 folders have real tags;
+  with it on, those albums just played quieter. Picture sharpening: FSRCNNX costs a one-off ~3 s shader
+  preparation (56 dropped frames) on the GTX 960, then 0 drops; the drop check ignores the first 1.5 s.
 - **Fonts and start-up speed (v8.2.2):** Alexander's PC has 9,223 fonts. Qt searches *all* installed fonts for
   (1) its DirectWrite font list, (2) a weight the family lacks, (3) a character the font lacks; each cost
   5-70 s there. So: ALMP sets `QT_QPA_PLATFORM=windows:fontengine=gdi` (unless the user set it), semi-bold uses

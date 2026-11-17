@@ -7,7 +7,7 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen](images/screenshot-v8.2-welcome.png)
 
-![ALMP 8.2.6 playing music: several playlist items selected, All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.6-window.png)
+![ALMP 8.2.7 playing music: several playlist items selected, All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.7-window.png)
 
 ![ALMP 8.2 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.2-playing.png)
 
@@ -17,7 +17,13 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.6 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.7 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+
+**New in 8.2.7:** low-quality videos (720p and less) are sharpened automatically with the FSRCNNX shader, which
+is now included (nothing is downloaded; HD videos are left alone; `E` turns it off and on to compare, and ALMP
+turns it off by itself if the graphics card cannot keep up). Optional **ReplayGain** for music (off by default):
+Automatic uses the album volume for an album played in order, the track volume otherwise. See the
+[release notes](docs/release-notes/v8.2.7.md).
 
 **New in 8.2.6:** the player's buttons keep working while Settings is open (in 8.2.5 they ignored the
 mouse, in fullscreen too). See the [release notes](docs/release-notes/v8.2.6.md).
@@ -56,7 +62,8 @@ and it is not a commercial product.
 - **Settings in one place** (gear button, `Ctrl+,`): high contrast, interface size, video size, *Remove played*,
   keep the playback speed, *Even out loud and quiet parts* (volume normaliser), volume up to 150%,
   show subtitles (remembered, off until you turn it on), subtitle size and a dark box behind subtitles,
-  video upscaling (Standard / Sharp / High quality, mpv's own scalers), optional own shaders from a `shaders` folder, media keys in the background, *Run at Startup*, and
+  video upscaling (Standard / Sharp / High quality, mpv's own scalers), picture sharpening for low-quality videos
+  (built-in FSRCNNX, or your own shaders from a `shaders` folder), ReplayGain (off by default; automatic / track / album), media keys in the background, *Run at Startup*, and
   **Make ALMP my default player** / **"Play with ALMP" and "Add to ALMP playlist"** when you right-click
   files (one or many) or a folder in Explorer (your Windows account only, can be undone).
 - **High-contrast theme** (black, white and yellow) for every part of the window, including the welcome screen.
@@ -110,8 +117,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.2.6-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.6-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.2.7-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.7-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
@@ -144,6 +151,7 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 | S | Save a picture of the video (to Pictures) |
 | P | Show / hide the playlist drawer (fullscreen) |
 | L | Loop: Off, One (this track), All (whole playlist) |
+| E | Picture sharpening off / on (low-quality videos), to compare |
 | Ctrl+F | Search the playlist (Down goes to the list, Esc clears) |
 | Ctrl+O / Ctrl+Shift+O | Add files / add a folder |
 | Ctrl+S | Save the playlist (only the shown items when a search or filter is on) |

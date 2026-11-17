@@ -21,10 +21,20 @@ Python             Python Software Foundation Licence      https://www.python.or
 Nuitka (build)     Apache License 2.0                      https://nuitka.net
 OpenSSL            Apache License 2.0                      https://www.openssl.org
 libffi             MIT                                     https://github.com/libffi/libffi
+FSRCNNX shader     LGPL v3 or later (igv)                  https://github.com/igv/FSRCNN-TensorFlow
 
 Microsoft Visual C++ runtime (vcruntime140.dll, msvcp140.dll and similar) is
 redistributed under Microsoft's redistributable licence terms. It is a
 system library of Windows, not part of ALMP's own source.
+
+FSRCNNX SHADER (shaders-builtin\FSRCNNX_x2_16-0-4-1.glsl)
+--------------------------------------------------------
+Copyright (C) 2017-2021 igv. An unmodified mpv shader file, licensed under the
+GNU Lesser General Public License v3.0 or later (LICENSES\LGPL-3.0.txt; the
+GPL v3 it refers to is in LICENSE). ALMP hands it to mpv for videos of 720p
+or less (Settings > Playback > Picture sharpening). It is a plain text file:
+you can read it, change it or replace it. SHA-256 of the included file:
+d5a24a271e5d9a3f7f7a053b150c460a44c25b3cf7f770857d57cc3a2e1c9965
 
 SOURCE CODE OF ALMP
 -------------------

@@ -88,6 +88,7 @@ jobs:
           python -m nuitka --standalone --enable-plugin=pyqt6 --windows-console-mode=disable --lto=yes
           --windows-icon-from-ico=icon.ico --include-data-file=icon.ico=icon.ico
           --include-data-file=icon.png=icon.png --include-data-file=runtime/mpv-2.dll=runtime/mpv-2.dll
+          --include-data-file=shaders-builtin/FSRCNNX_x2_16-0-4-1.glsl=shaders-builtin/FSRCNNX_x2_16-0-4-1.glsl
           --include-package=almp --output-filename=ALMP.exe --assume-yes-for-downloads --company-name=Alexbed
           --product-name="Alexbed Light Media Player" --file-description="Alexbed Light Media Player"
           --file-version=%VER%.0 --product-version=%VER%.0 main.py
