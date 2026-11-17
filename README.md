@@ -7,6 +7,8 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen](images/screenshot-v8.2-welcome.png)
 
+![ALMP 8.2.4 playing music: All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.4-window.png)
+
 ![ALMP 8.2 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.2-playing.png)
 
 *High-contrast theme on:*
@@ -15,10 +17,13 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.3 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.4 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
-**New in 8.2.3:** fullscreen opens at once (no more half-drawn control bar), a double-clicked video gets the whole window, a new setting plays every video in fullscreen, and "Play with ALMP" / "Add to ALMP playlist" in the right-click menu for many selected files.
-See the [release notes](docs/release-notes/v8.2.3.md).
+**New in 8.2.4:** ALMP keeps all its files in a `Data` folder next to `ALMP.exe` (delete the folder and it is gone),
+a small log that is cleared on close, *Show subtitles* (off until you turn it on), **All / Video / Audio** filter,
+`Ctrl+S` saves only what is shown, the format of the playing track (e.g. *FLAC - 24-bit / 96 kHz*), optional gapless
+playback and exclusive audio, video upscaling (Standard / Sharp / High quality), and a fix for the fullscreen controls
+not appearing while music plays. See the [release notes](docs/release-notes/v8.2.4.md).
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
 and it is not a commercial product.
@@ -97,8 +102,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.2.3-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.3-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.2.4-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.4-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
@@ -133,6 +138,7 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 | L | Loop: Off, One (this track), All (whole playlist) |
 | Ctrl+F | Search the playlist (Down goes to the list, Esc clears) |
 | Ctrl+O / Ctrl+Shift+O | Add files / add a folder |
+| Ctrl+S | Save the playlist (only the shown items when a search or filter is on) |
 | Ctrl+, | Settings |
 | Enter | Play the selected playlist item |
 | Delete / Shift+Delete | Remove from the list / delete the file (asks first) |

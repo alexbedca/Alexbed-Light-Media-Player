@@ -159,6 +159,8 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 **Fullscreen with music and videos mixed**
 - [ ] Fullscreen on a video, then the next track is music: ALMP stays fullscreen and shows the album art (or
       the ALMP logo on dark); the next video plays fullscreen again.
+- [ ] In fullscreen while MUSIC plays: moving the mouse shows the control bar (and the drawer if open), and
+      it hides again after 3 s, the same as for a video (8.2.4 test report: only F worked).
 
 **Music**
 - [ ] A FLAC track shows e.g. "FLAC - 24-bit / 96 kHz" (or "FLAC - 16-bit / 44.1 kHz") next to the time;
@@ -176,3 +178,4 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 **About**
 - [ ] Help > About shows "Newer versions: github.com/alexbedca/Alexbed-Light-Media-Player/releases" and
       **Copy link** puts that address on the clipboard; nothing opens and nothing connects.
+- [ ] About also shows the playback engine line ("Playback engine: mpv ..., FFmpeg ..."); it was empty before 8.2.4.

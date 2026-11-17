@@ -1,7 +1,7 @@
 ====================================================================
                   ALEXBED LIGHT MEDIA PLAYER (ALMP)
 ====================================================================
-Version:       v8.2.3
+Version:       v8.2.4
 Developer:     Alexander Bediako
 Contact:       alexbedgh@gmail.com
 Website:       https://github.com/alexbedca/Alexbed-Light-Media-Player
@@ -18,7 +18,7 @@ other software, and it does not need administrator rights.
 
 1. Extract the ZIP file to a folder on your PC (for example in
    Documents). Do not run it from inside the ZIP.
-2. Open the extracted "ALMP-v8.2.3-Portable" folder.
+2. Open the extracted "ALMP-v8.2.4-Portable" folder.
 3. Double-click "ALMP.exe".
 4. Drag and drop a folder (or files) into the window. If the playlist
    is empty, the first file starts playing automatically.
@@ -32,7 +32,7 @@ from https://github.com/alexbedca/Alexbed-Light-Media-Player/releases
 To check that your download is the real one, compare its SHA-256
 checksum with the one on the release page. Open PowerShell in the
 folder with the zip and type:
-    Get-FileHash .\ALMP-v8.2.3-Portable.zip -Algorithm SHA256
+    Get-FileHash .\ALMP-v8.2.4-Portable.zip -Algorithm SHA256
 The long code it prints must be exactly the same as on the release
 page (capital or small letters do not matter). If it is different, do
 not run the file.
@@ -82,6 +82,8 @@ settings and log files. Then delete the ALMP folder.
   quick with 100,000+ files. "Stop adding" stops a long scan.
 - Search box: type to filter the playlist by file or folder name
   (Ctrl+F). Enter plays the first match.
+- All / Video / Audio buttons under the search box show one type of
+  file (by file type only, no disk reads), together with the search.
 - Right-click a track: Play, Play next, Move up / down, Remove from
   list, Show in folder, Copy file path, Delete file, Sort.
 - Sort the playlist by name ("Track 2" before "Track 10"), by folder,
@@ -91,14 +93,18 @@ settings and log files. Then delete the ALMP folder.
   starts playing. The playlist is not wiped.
 - Drag and drop files or folders to add them to the playlist.
 - Starts clean: ALMP does not remember the last playlist.
-- Save Playlist as M3U and open a playlist file: "+ Add Media" menu.
+- Save Playlist as M3U (Ctrl+S) and open a playlist file: "+ Add
+  Media" menu. With a search or filter on, only the shown items are
+  saved.
 - Sleep timer (clock button): 5 minutes to 2 hours, or "At the end of
   this track". The sound fades out during the last minute. "+15
   minutes" while it runs. When time is up: Pause, or Close ALMP.
 - Settings (gear button, Ctrl+,): high contrast, interface size,
   video size, remove played, keep the playback speed, even out loud
-  and quiet parts, volume up to 150%, subtitle size and dark box,
-  media keys in the background, Run at Startup, default player.
+  and quiet parts, volume up to 150%, show subtitles (off until you
+  turn it on), subtitle size and dark box, video upscaling (Standard
+  / Sharp / High quality), gapless playback, exclusive audio, the
+  log, media keys in the background, Run at Startup, default player.
 - High Contrast Theme (black, white and yellow): the half-filled
   circle button, or Settings. Applies at once, everywhere.
 - Shuffle, "Remove played" (off for new installs) and Loop:
@@ -116,9 +122,16 @@ settings and log files. Then delete the ALMP folder.
 - Optional (off unless you switch it on): continue films and
   audiobooks of 20 minutes or more where you stopped.
 - Album art from embedded tags (MP3, FLAC, M4A).
+- The playing bar shows the format of the playing track, for example
+  "FLAC - 24-bit / 96 kHz".
+- Optional gapless playback (the next track is read ahead) and
+  optional exclusive audio (WASAPI exclusive, bit-perfect, for
+  external DACs; other programs are silent while ALMP plays). Both
+  are off unless you switch them on.
 - Hardware video decoding when your graphics card supports it.
 - Click anywhere on the progress bar to jump there.
-- Help (F1) and About (version, licence, open the log folder).
+- Help (F1) and About (version, licence, open the log folder, the
+  address of the Releases page with a "Copy link" button).
 
 --------------------------------------------------------------------
 5. KEYBOARD SHORTCUTS
@@ -136,6 +149,7 @@ P ................. Show / hide the playlist drawer (fullscreen)
 L ................. Loop: Off / One (this track) / All (playlist)
 Ctrl+F ............ Search the playlist
 Ctrl+O ............ Add files      Ctrl+Shift+O ... Add a folder
+Ctrl+S ............ Save the playlist (only the shown items)
 Ctrl+, ............ Settings
 Enter ............. Play the selected playlist item
 Delete ............ Remove the selected item from the list
@@ -160,14 +174,21 @@ Double-click video  Fullscreen on / off
   playlist; the file is kept.
 - Interface size: changes after ALMP restarts ("Apply now" in
   Settings restarts it; the playlist is not kept).
-- Remembered between runs (in %APPDATA%\ALMP\settings.json): volume,
-  shuffle, remove played and the choices in Settings. Not remembered:
-  the playlist, the loop mode and the playback speed.
-- ALMP does not connect to the internet.
-- If something goes wrong, ALMP keeps running and writes a short error
-  report to %LOCALAPPDATA%\ALMP\almp.log on your PC. It is never sent
-  anywhere. It can contain file names. You can attach it to a bug
-  report (Settings > About ALMP > Open log folder).
+- ALMP keeps all its files in a "Data" folder next to ALMP.exe, so
+  deleting the ALMP folder removes everything. Only if that folder
+  cannot be written to (for example in Program Files) does ALMP use
+  %APPDATA%\ALMP and %LOCALAPPDATA%\ALMP instead. Settings from
+  versions before 8.2.4 are moved into "Data" on the first start.
+- Remembered between runs (in Data\settings.json): volume, shuffle,
+  remove played and the choices in Settings. Not remembered: the
+  playlist, the loop mode and the playback speed.
+- ALMP does not connect to the internet and has no update check.
+- The log (Data\almp.log, at most 256 KB) is deleted when ALMP closes
+  normally, unless something went wrong during that run; then it is
+  kept so you can attach it to a bug report (Help > About ALMP > Open
+  log folder). Settings > Privacy and files can keep the last run or
+  switch the log off. It is never sent anywhere and can contain file
+  names.
 
 --------------------------------------------------------------------
 7. LICENSE
