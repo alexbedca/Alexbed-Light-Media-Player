@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .logsetup import log
 from .media import AUDIO_EXTENSIONS, PLAYLIST_EXTENSIONS, VIDEO_EXTENSIONS
+from .paths import get_settings_dir
 
 if sys.platform == "win32":
     import ctypes
@@ -463,7 +464,13 @@ def set_folder_verb(exe, enabled):
 
 WIN_STARTUP_DIR = Path(os.getenv("APPDATA") or Path.home()) / r"Microsoft\Windows\Start Menu\Programs\Startup"
 WIN_SHORTCUT = WIN_STARTUP_DIR / "ALMP.lnk"
-STARTUP_MARKER = Path(os.getenv("APPDATA") or Path.home()) / "ALMP" / "startup_target.txt"
+STARTUP_MARKER_NAME = "startup_target.txt"
+
+
+def startup_marker():
+    """The small file that remembers which ALMP.exe the Startup shortcut points at (in the Data folder)."""
+    return get_settings_dir() / STARTUP_MARKER_NAME
+
 LEGACY_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 LEGACY_RUN_VALUE = "AlexbedLightMediaPlayer"
 
@@ -492,11 +499,12 @@ def write_startup_shortcut(exe_path):
         return False, f"PowerShell could not run: {e}"
     if r.returncode != 0 or not WIN_SHORTCUT.exists():
         return False, f"PowerShell exit code {r.returncode}: {(r.stderr or '').strip()[:500]}"
+    marker = startup_marker()
     try:
-        STARTUP_MARKER.parent.mkdir(parents=True, exist_ok=True)
-        STARTUP_MARKER.write_text(os.path.normcase(exe_path), encoding="utf-8")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(os.path.normcase(exe_path), encoding="utf-8")
     except OSError:
-        log.warning("Could not write %s", STARTUP_MARKER)
+        log.warning("Could not write %s", marker)
     return True, ""
 
 
@@ -508,8 +516,8 @@ def remove_startup_shortcut():
 def repair_startup_shortcut(exe_path):
     """If the ALMP folder was moved, point the existing startup shortcut at the new place."""
     try:
-        if STARTUP_MARKER.exists() and \
-           STARTUP_MARKER.read_text(encoding="utf-8").strip() == os.path.normcase(exe_path):
+        marker = startup_marker()
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() == os.path.normcase(exe_path):
             return
         r = _run_powershell("(New-Object -ComObject WScript.Shell).CreateShortcut(%s).TargetPath"
                             % _ps_quote(WIN_SHORTCUT))

@@ -28,6 +28,7 @@ class PlaylistModel(QAbstractListModel):
         self.store = store if store is not None else PlaylistStore()
         self._rows = None            # None = everything shown; else sorted list of source rows
         self._words = []
+        self._kind = None            # None = All; "audio" / "video" (by file extension)
         self._current = -1           # source row of the track that is playing
         self._bold = QFont()
         self._bold.setBold(True)
@@ -38,6 +39,10 @@ class PlaylistModel(QAbstractListModel):
     @property
     def filtered(self):
         return self._rows is not None
+
+    @property
+    def kind(self):
+        return self._kind
 
     @property
     def query_words(self):
@@ -146,7 +151,7 @@ class PlaylistModel(QAbstractListModel):
             self.endInsertRows()
         else:
             store.commit(fresh)
-            new_rows = store.filter_rows(self._words, within=range(start, start + len(fresh)))
+            new_rows = store.filter_rows(self._words, within=range(start, start + len(fresh)), kind=self._kind)
             if new_rows:
                 v0 = len(self._rows)
                 self.beginInsertRows(QModelIndex(), v0, v0 + len(new_rows) - 1)
@@ -215,7 +220,7 @@ class PlaylistModel(QAbstractListModel):
     def clear(self):
         self.beginResetModel()
         self.store.clear()
-        self._rows = None if not self._words else []
+        self._rows = None if not (self._words or self._kind) else []
         self._current = -1
         self.endResetModel()
 
@@ -229,22 +234,33 @@ class PlaylistModel(QAbstractListModel):
         if cur_path is not None:
             self._current = self.store.index_of(cur_path)
         if self._rows is not None:
-            self._rows = self.store.filter_rows(self._words)
+            self._rows = self.store.filter_rows(self._words, kind=self._kind)
         self.endResetModel()
         return True
 
     # --- search ---
-    def set_filter(self, text):
-        """Show only rows whose name or folder contains every word. Returns the number shown."""
+    def set_filter(self, text, kind=Ellipsis):
+        """Show only rows whose name or folder contains every word (and, with `kind` "audio" or
+        "video", only that type of file; None = all). Returns the number shown."""
         words = split_query(text)
-        if words == self._words:
+        kind = self._kind if kind is Ellipsis else (kind if kind in ("audio", "video") else None)
+        if words == self._words and kind == self._kind:
             return self.rowCount()
-        within = self._rows if (self._rows is not None and is_refinement(self._words, words)) else None
+        within = None
+        if self._rows is not None and kind == self._kind and is_refinement(self._words, words):
+            within = self._rows
+        elif self._rows is not None and self._kind is None and kind is not None and words == self._words:
+            within = self._rows              # same words, now only one type: check the matches only
         self.beginResetModel()
         self._words = words
-        self._rows = None if not words else self.store.filter_rows(words, within=within)
+        self._kind = kind
+        self._rows = None if not (words or kind) else self.store.filter_rows(words, within=within, kind=kind)
         self.endResetModel()
         return self.rowCount()
+
+    def set_kind(self, kind):
+        """All (None) / "video" / "audio". Keeps the search words."""
+        return self.set_filter(" ".join(self._words), kind)
 
     # --- drag and drop inside the list ---
     def supportedDropActions(self):

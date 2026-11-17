@@ -32,9 +32,18 @@ ROOT = Path(__file__).resolve().parent.parent
 LINE = re.compile(r"Start-up: (window shown|playing) after ([0-9.]+) s")
 
 
-def log_path():
-    base = os.getenv("LOCALAPPDATA") or os.getenv("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    return Path(base) / "ALMP" / "almp.log"
+def log_paths(exe=None, environ=None):
+    """Where ALMP may write almp.log: the Data folder next to ALMP.exe (or main.py) since 8.2.4,
+    the folder in ALMP_DATA_DIR, and the old %LOCALAPPDATA%\\ALMP (used before 8.2.4, and by 8.2.4
+    when its own folder cannot be written to). All are watched; the lines are found in whichever is used."""
+    environ = os.environ if environ is None else environ
+    folder = Path(exe).resolve().parent if exe else ROOT
+    paths = [folder / "Data" / "almp.log"]
+    if environ.get("ALMP_DATA_DIR"):
+        paths.insert(0, Path(environ["ALMP_DATA_DIR"]) / "almp.log")
+    base = environ.get("LOCALAPPDATA") or environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    paths.append(Path(base) / "ALMP" / "almp.log")
+    return paths
 
 
 def read_new(path, offset):
@@ -46,16 +55,16 @@ def read_new(path, offset):
         return ""
 
 
-def one_run(cmd, env, timeout_s):
-    log = log_path()
-    offset = log.stat().st_size if log.exists() else 0
+def one_run(cmd, env, timeout_s, logs):
+    offsets = {p: (p.stat().st_size if p.exists() else 0) for p in logs}
     t0 = time.perf_counter()
     proc = subprocess.Popen(cmd, env=env, cwd=str(ROOT))
     found, wall = {}, None
     try:
         while time.perf_counter() - t0 < timeout_s:
-            for kind, secs in LINE.findall(read_new(log, offset)):
-                found[kind] = float(secs)
+            for p, offset in offsets.items():
+                for kind, secs in LINE.findall(read_new(p, offset)):
+                    found[kind] = float(secs)
             if "playing" in found:
                 wall = time.perf_counter() - t0
                 break
@@ -91,7 +100,7 @@ def main():
     print("run   window shown   playing   (wall clock until playing)")
     playing = []
     for i in range(1, a.runs + 1):
-        win, play, wall = one_run(cmd, env, a.timeout)
+        win, play, wall = one_run(cmd, env, a.timeout, log_paths(a.exe, env))
         fmt = lambda v: "   -   " if v is None else f"{v:6.1f} s"   # noqa: E731
         print(f"{i:>3}   {fmt(win):>12}   {fmt(play):>7}   ({fmt(wall).strip()})")
         if play is not None:

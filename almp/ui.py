@@ -25,6 +25,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -86,6 +87,7 @@ from .media import (
     PLAYLIST_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
     VIDEO_EXTENSIONS,
+    file_ext,
     is_audio_path,
     write_playlist_file,
 )
@@ -95,7 +97,10 @@ from .player import (
     BOOST_MAX_VOLUME,
     MPV_IMPORT_ERROR,
     NORMAL_MAX_VOLUME,
+    SCALER_KEYS,
     VIDEO_SIZE_NAMES,
+    audio_format_text,
+    gapless_options,
     get_mpv_end_reason,
     mpv,
     mpv_options,
@@ -103,6 +108,7 @@ from .player import (
     set_audio_filter,
     set_prop,
     subtitle_background_options,
+    upscaling_properties,
     video_size_properties,
 )
 from .playlist_model import PlaylistModel
@@ -218,6 +224,13 @@ class MediaWindow(QMainWindow):
         self._bar_mode = None
         self._bar_widths = None
         self._sort_busy = False
+        self._gapless_next = None          # path mpv was told to play next (gapless playback)
+        self._planned_shuffle = None       # the shuffle pick made for that, used by next_track
+        self._in_end_handler = False
+        self._loadfile_count = 0
+        self._scaler_defaults = {}         # mpv's own scale/cscale/dscale at start ("Standard")
+        self._format_path = None           # track whose format text is shown
+        self._tag_format = None            # (bits, sample rate) read from the playing track's header
         self.ipc_server = None
         self._media_filter = MediaCommandFilter()
         self.media_controls = None
@@ -410,6 +423,7 @@ class MediaWindow(QMainWindow):
         sc("Ctrl+O", self.choose_files)
         sc("Ctrl+Shift+O", self.choose_folder)
         sc("Ctrl+,", self.show_settings)
+        sc("Ctrl+S", self.save_playlist_m3u)
         sc(Qt.Key.Key_S, self.take_snapshot)
         sc(Qt.Key.Key_L, self.cycle_loop_mode)
         sc(Qt.Key.Key_F1, self.show_help)
@@ -634,6 +648,60 @@ class MediaWindow(QMainWindow):
         update_settings(subtitle_scale=float(value))
         set_prop(self.player, "sub-scale", float(value))
 
+    def set_show_subtitles(self, on, announce=True):
+        """Settings > Subtitles > Show subtitles, and Off / a track in the subtitles menu (same setting,
+        remembered between runs, default off)."""
+        on = bool(on)
+        self.settings["show_subtitles"] = on
+        update_settings(show_subtitles=on)
+        set_prop(self.player, "sub-visibility", on)
+        if announce:
+            self._status("Subtitles are shown." if on else "Subtitles are hidden.")
+
+    def pick_subtitle(self, track_id):
+        self._safe_set_mpv_prop("sid", track_id)
+        self.set_show_subtitles(True)
+
+    def set_gapless(self, on):
+        """Settings > Gapless playback (default off)."""
+        self.settings["gapless"] = bool(on)
+        update_settings(gapless=bool(on))
+        for k, v in gapless_options(on).items():
+            set_prop(self.player, k.replace("_", "-"), v)
+        if on and self.current_path and self.player and not self.player.idle_active:
+            self._prefetch_next()
+        elif not on:
+            self._drop_prefetch()
+        self._status("Gapless playback is on: the next track is read ahead." if on else "Gapless playback is off.")
+
+    def set_audio_exclusive(self, on):
+        """Settings > Exclusive audio (WASAPI exclusive mode; default off, remembered)."""
+        self.settings["audio_exclusive"] = bool(on)
+        update_settings(audio_exclusive=bool(on))
+        if set_prop(self.player, "audio-exclusive", bool(on)) and self.player is not None:
+            try:
+                self.player.command("ao-reload")           # takes effect at once, not only at the next track
+            except Exception:          # noqa: BLE001
+                log.debug("ao-reload refused", exc_info=True)
+        self._status("Exclusive audio is on: other programs are silent while ALMP plays." if on
+                     else "Exclusive audio is off.")
+
+    def set_upscaling(self, level):
+        """Settings > Video upscaling: Standard / Sharp / High quality (mpv's built-in scalers only)."""
+        level = level if level in ("standard", "sharp", "high") else "standard"
+        self.settings["upscaling"] = level
+        update_settings(upscaling=level)
+        self._apply_upscaling(level)
+
+    def _apply_upscaling(self, level):
+        for k, v in upscaling_properties(level, self._scaler_defaults).items():
+            set_prop(self.player, k, v)
+
+    def set_log_mode(self, mode):
+        """Settings > Privacy > Log. Used when ALMP closes (and at the next start)."""
+        self.settings["log_mode"] = mode
+        update_settings(log_mode=mode)
+
     def set_subtitle_background(self, on):
         self.settings["subtitle_background"] = bool(on)
         update_settings(subtitle_background=bool(on))
@@ -786,6 +854,9 @@ class MediaWindow(QMainWindow):
                 self.search_edit.clear()
                 return True
 
+        if (obj is getattr(self, "audio_art_label", None) and et == QEvent.Type.MouseMove
+                and self._is_fullscreen):
+            self._on_fs_activity()          # music: the art covers the video, same as moving over video
         if obj is getattr(self, "video", None):
             if et == QEvent.Type.MouseButtonDblClick:
                 self._toggle_fullscreen()
@@ -847,13 +918,17 @@ class MediaWindow(QMainWindow):
                 add_choice(audio_menu, label(t), tv(t, "selected"),
                            lambda tid=tv(t, "id"): self._safe_set_mpv_prop("aid", tid))
         sub_menu = menu.addMenu("Subtitles")
+        # "Off" and the Settings box "Show subtitles" are the same remembered setting.
+        show = bool(self.settings["show_subtitles"])
         if sub_tracks:
             any_selected = any(tv(t, "selected") for t in sub_tracks)
-            add_choice(sub_menu, "Off", not any_selected, lambda: self._safe_set_mpv_prop("sid", "no"))
+            add_choice(sub_menu, "Off", not (show and any_selected), lambda: self.set_show_subtitles(False))
             for t in sub_tracks:
-                add_choice(sub_menu, label(t), tv(t, "selected"),
-                           lambda tid=tv(t, "id"): self._safe_set_mpv_prop("sid", tid))
+                add_choice(sub_menu, label(t), show and tv(t, "selected"),
+                           lambda tid=tv(t, "id"): self.pick_subtitle(tid))
             sub_menu.addSeparator()
+        else:
+            add_choice(sub_menu, "Show subtitles", show, lambda: self.set_show_subtitles(not show))
         sub_menu.addAction("Load subtitle file...", self.load_external_subtitle)
         sub_menu.addAction("Subtitle size and box (Settings)...", self.show_settings)
 
@@ -939,6 +1014,8 @@ class MediaWindow(QMainWindow):
             return
         pos = add_to_queue(self.queue, path)
         self.model.refresh_path(path)
+        if self._gapless_next:
+            self._prefetch_next()
         self._status(f"Plays next: {Path(path).name}" if pos == 1 else f"Plays after {pos - 1} other(s): {Path(path).name}")
 
     def _unqueue(self, path):
@@ -947,6 +1024,8 @@ class MediaWindow(QMainWindow):
         except ValueError:
             return
         self.model.refresh_all()        # positions of the others change too
+        if self._gapless_next:
+            self._prefetch_next()
         self._status(f"Removed from \"Play next\": {Path(path).name}")
 
     def _move_selected(self, delta):
@@ -1034,6 +1113,7 @@ class MediaWindow(QMainWindow):
         if fname:
             try:
                 self.player.sub_add(fname)
+                self.set_show_subtitles(True, announce=False)
                 self._status(f"Subtitle loaded: {Path(fname).name}")
             except Exception as e:          # noqa: BLE001
                 log.exception("Could not load subtitle %s", fname)
@@ -1098,6 +1178,11 @@ class MediaWindow(QMainWindow):
         self.audio_art_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.audio_art_label.customContextMenuRequested.connect(
             lambda p: self.show_video_menu(self.audio_art_label.mapTo(self.video, p)))
+        # The album art covers the whole video area while music plays. Without its own mouse tracking
+        # Qt never sends it (or the video under it) a plain mouse move, so the fullscreen controls
+        # would not come back when the mouse moves over the art.
+        self.audio_art_label.setMouseTracking(True)
+        self.audio_art_label.installEventFilter(self)
         self.audio_art_label.hide()
 
         self.welcome_widget = WelcomeScreen(self.video)
@@ -1131,6 +1216,12 @@ class MediaWindow(QMainWindow):
         self.scan_cancel_button.setAccessibleName("Stop adding files")
         self.scan_cancel_button.clicked.connect(self.cancel_scan)
         self.scan_cancel_button.hide()
+        self.format_label = QLabel("")
+        self.format_label.setObjectName("dimLabel")
+        self.format_label.setAccessibleName("Audio format")
+        self.format_label.setToolTip("Format of the track that is playing (read from this file only)")
+        self.format_label.setContentsMargins(0, 0, 12, 0)          # a gap before the time
+        self.format_label.hide()
         self.time_label = QLabel("00:00 / 00:00")
         self.time_label.setObjectName("timeLabel")
         self.time_label.setAccessibleName("Time")
@@ -1138,6 +1229,7 @@ class MediaWindow(QMainWindow):
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.addWidget(self.status_label, stretch=1)
         status_row.addWidget(self.scan_cancel_button)
+        status_row.addWidget(self.format_label)
         status_row.addWidget(self.time_label)
         self.control_panel_layout.addLayout(status_row)
 
@@ -1293,6 +1385,28 @@ class MediaWindow(QMainWindow):
         self.search_edit.textChanged.connect(self._schedule_filter)
         self.search_edit.returnPressed.connect(self._play_first_visible)
         self.right_layout.addWidget(self.search_edit)
+
+        # All / Video / Audio: by file extension only (no disk reads), works together with the search.
+        kind_row = QHBoxLayout()
+        kind_row.setContentsMargins(0, 0, 0, 0)
+        kind_row.setSpacing(4)
+        self.kind_group = QButtonGroup(self)
+        self.kind_group.setExclusive(True)
+        self.kind_buttons = {}
+        for kind, text, tip in ((None, "All", "Show every file"),
+                                ("video", "Video", "Show only video files (by file type)"),
+                                ("audio", "Audio", "Show only music and other audio files (by file type)")):
+            b = QPushButton(text)
+            b.setObjectName("kindButton")
+            b.setCheckable(True)
+            b.setChecked(kind is None)
+            b.setToolTip(tip + "\nWorks together with the search box.")
+            b.setAccessibleName(f"Show {text.lower()} files" if kind else "Show all files")
+            b.clicked.connect(lambda _c=False, k=kind: self.set_kind_filter(k))
+            self.kind_group.addButton(b)
+            self.kind_buttons[kind] = b
+            kind_row.addWidget(b, 1)
+        self.right_layout.addLayout(kind_row)
 
         self.playlist = PlaylistView()
         self.playlist.setModel(self.model)
@@ -1557,6 +1671,7 @@ class MediaWindow(QMainWindow):
     def set_sleep_end_of_track(self):
         self.set_sleep_timer(0)
         self._sleep_end_of_track = True
+        self._drop_prefetch()
         self._update_sleep_button()
         self._status("Sleep timer: playback stops at the end of this track.", announce=True)
 
@@ -1610,16 +1725,29 @@ class MediaWindow(QMainWindow):
         if self._pending or self._scan_active:
             self._status("Still adding files - please wait until loading has finished, then save.")
             return
+        if self._filter_timer.isActive():
+            self._filter_timer.stop()
+            self._apply_filter()
+        files = self.files_to_save()
+        if not files:
+            self._status("Nothing is shown in the playlist - nothing to save.")
+            return
+        if self.model.filtered:
+            title = f"Save the {len(files):,} items shown (search or filter is on) as a playlist"
+        else:
+            title = "Save Playlist"
         start = str(Path.home() / "Music" / "ALMP-playlist.m3u8")
         with self._modal():
-            path, _ = QFileDialog.getSaveFileName(self, "Save Playlist", start, "Playlist (*.m3u8 *.m3u)")
+            path, _ = QFileDialog.getSaveFileName(self, title, start, "Playlist (*.m3u8 *.m3u)")
         if not path:
             return
         if not path.lower().endswith((".m3u", ".m3u8")):
             path += ".m3u8"
         try:
-            write_playlist_file(path, self.store.paths)
-            msg = f"Saved {len(self.store):,} items to {os.path.basename(path)}"
+            write_playlist_file(path, files)
+            msg = f"Saved {len(files):,} items to {os.path.basename(path)}"
+            if self.model.filtered:
+                msg += f" (only what is shown, of {len(self.store):,})"
             if self._removed_played_count:
                 msg += " (items already played and removed are not included)"
             self._status(msg)
@@ -1627,6 +1755,14 @@ class MediaWindow(QMainWindow):
             log.exception("Could not save playlist %s", path)
             with self._modal():
                 QMessageBox.warning(self, "Save Playlist", f"Could not save the playlist:\n{e}")
+
+    def files_to_save(self):
+        """What "Save playlist" writes: everything, or only what is shown while a search or the
+        Video / Audio filter is on (in playlist order)."""
+        if not self.model.filtered:
+            return list(self.store.paths)
+        paths = self.store.paths
+        return [paths[self.model.source_row(v)] for v in range(self.model.rowCount())]
 
     def choose_playlist_file(self):
         with self._modal():
@@ -1690,6 +1826,8 @@ class MediaWindow(QMainWindow):
         box.setEnabled(enabled)
         box.setToolTip(REMOVE_PLAYED_TIP if enabled else REMOVE_PLAYED_LOOP_ALL_TIP)
         self._update_loop_button()
+        if self.settings.get("gapless") and self.current_path and self.player and not self.player.idle_active:
+            self._prefetch_next()
         if self._loop_mode == LOOP_ONE:
             self._status("Loop One: the track that is playing will repeat.", announce=True)
         elif self._loop_mode == LOOP_ALL:
@@ -1716,8 +1854,21 @@ class MediaWindow(QMainWindow):
             self._bridge.end_file.connect(self._handle_end_file)
             s = self.settings
             self.player = mpv.MPV(**mpv_options(self.video.winId(), boost=s["volume_boost"],
-                                                subtitle_scale=s["subtitle_scale"]))
+                                                subtitle_scale=s["subtitle_scale"],
+                                                show_subtitles=s["show_subtitles"], gapless=s["gapless"],
+                                                audio_exclusive=s["audio_exclusive"]))
             self.player.volume = self.volume_slider.value()
+            for k in SCALER_KEYS:                       # "Standard" = what mpv uses on its own
+                try:
+                    v = self.player[k]
+                    if k in ("scale", "cscale", "dscale") and not isinstance(v, str):
+                        v = ""          # cscale's default is empty ("same as scale"); python-mpv reads it as 0
+                    if v is not None:
+                        self._scaler_defaults[k] = v
+                except Exception:          # noqa: BLE001
+                    log.debug("mpv option %s not readable", k, exc_info=True)
+            if s["upscaling"] != "standard":
+                self._apply_upscaling(s["upscaling"])
 
             @self.player.event_callback("end-file")
             def handle_end_file(event):
@@ -1764,6 +1915,25 @@ class MediaWindow(QMainWindow):
         ms = (time.perf_counter() - t) * 1000
         if ms > 50:
             log.info("Playlist search took %.0f ms for %d items", ms, len(self.store))
+        self._update_playlist_count()
+        cur = self.current_index
+        v = self.model.view_row(cur) if cur >= 0 else -1
+        if v >= 0:
+            self.playlist.setCurrentIndex(self.model.index(v))
+            self.playlist.scrollTo(self.model.index(v))
+
+    def set_kind_filter(self, kind):
+        """All / Video / Audio buttons above the playlist (file extension only, combines with search)."""
+        if self._filter_timer.isActive():
+            self._filter_timer.stop()
+        t = time.perf_counter()
+        self.model.set_filter(self.search_edit.text(), kind)
+        ms = (time.perf_counter() - t) * 1000
+        if ms > 50:
+            log.info("Playlist type filter took %.0f ms for %d items", ms, len(self.store))
+        b = self.kind_buttons.get(self.model.kind)
+        if b is not None and not b.isChecked():
+            b.setChecked(True)
         self._update_playlist_count()
         cur = self.current_index
         v = self.model.view_row(cur) if cur >= 0 else -1
@@ -1930,11 +2100,23 @@ class MediaWindow(QMainWindow):
     # ------------------------------------------------------------------ album art
     @staticmethod
     def _load_album_art(file_path):
+        return MediaWindow._read_audio_file(file_path)[0]
+
+    @staticmethod
+    def _read_audio_file(file_path):
+        """(album art pixmap or None, (bits, sample rate) or None) from the playing track's own tags.
+        One read of one file; never used for the playlist."""
+        info = None
         try:
             from mutagen import File as MutagenFile
             audio = MutagenFile(file_path)
             if audio is None:
-                return None
+                return None, None
+            ai = getattr(audio, "info", None)
+            bits = getattr(ai, "bits_per_sample", None)
+            rate = getattr(ai, "sample_rate", None)
+            info = (bits if isinstance(bits, int) and bits > 0 else None,
+                    rate if isinstance(rate, int) and rate > 0 else None)
             art_data = None
             tags = getattr(audio, "tags", None)
             pics = []
@@ -1956,10 +2138,10 @@ class MediaWindow(QMainWindow):
             if art_data:
                 image = QImage.fromData(art_data)
                 if not image.isNull():
-                    return QPixmap.fromImage(image)
+                    return QPixmap.fromImage(image), info
         except Exception:          # noqa: BLE001 - a broken tag only means "no picture"
             log.debug("No album art for %s", file_path, exc_info=True)
-        return None
+        return None, info
 
     # ------------------------------------------------------------------ volume / speed
     def change_volume(self, *_args):
@@ -2221,8 +2403,32 @@ class MediaWindow(QMainWindow):
                 self.time_label.setText(f"{fmt_time(current_time)} / {fmt_time(duration)}")
                 if current_time > 0:
                     self._error_streak = 0
+            if self._format_path != self.current_path:
+                self._update_format_label()
         except Exception:          # noqa: BLE001 - mpv between files
             log.debug("poll failed", exc_info=True)
+
+    def _update_format_label(self):
+        """'FLAC - 24-bit / 96 kHz' for the audio track that is playing (only that one file is read)."""
+        path = self.current_path
+        if not path or not is_audio_path(path) or not self.player:
+            self._format_path = path
+            self.format_label.hide()
+            return
+        try:
+            # Runtime properties: player["..."] would read mpv's *options* (python-mpv), so use attributes.
+            params = getattr(self.player, "audio_params", None) or {}
+            codec = getattr(self.player, "audio_codec_name", None) or ""
+        except Exception:          # noqa: BLE001 - not known yet
+            return
+        if not isinstance(params, dict) or not params.get("samplerate"):
+            return                          # mpv has not opened the sound yet: try again next tick
+        bits, rate = self._tag_format or (None, None)
+        text = audio_format_text(file_ext(path), codec, rate or params.get("samplerate"), bits,
+                                 params.get("format"))
+        self._format_path = path
+        self.format_label.setText(text)
+        self.format_label.setVisible(bool(text))
 
     @staticmethod
     def _fmt_time(seconds):
@@ -2641,6 +2847,8 @@ class MediaWindow(QMainWindow):
         self._history.clear()
         if enabled and self.current_path:
             self._played_paths.add(self.current_path)
+        if self._gapless_next:
+            self._prefetch_next()
 
     def play_selected_item(self, *_args):
         src = self._selected_source_row()
@@ -2687,8 +2895,11 @@ class MediaWindow(QMainWindow):
             else:
                 self.hide_timer.start()
 
+        self._format_path = None
+        self._tag_format = None
+        self.format_label.hide()
         if is_audio_path(path):
-            pixmap = self._load_album_art(path)
+            pixmap, self._tag_format = self._read_audio_file(path)
             self._sync_video_overlays()
             if pixmap:
                 self.audio_art_label.setPixmap(pixmap.scaled(
@@ -2703,6 +2914,7 @@ class MediaWindow(QMainWindow):
             if self.settings.get("play_fullscreen") and not self._is_fullscreen and self.isVisible():
                 self._toggle_fullscreen()          # Settings > Always play videos in fullscreen
 
+        planned, self._gapless_next = self._gapless_next, None
         if self.player:
             new_speed = speed_for_new_track(self.speed_combo.currentText(), self.settings["keep_speed"])
             if new_speed != self.speed_combo.currentText():
@@ -2715,8 +2927,13 @@ class MediaWindow(QMainWindow):
                 resumed = resume_start_for(self._positions, self._resume_key(path))
                 if resumed:
                     options["start"] = str(resumed)
+            # Gapless: mpv already went on to this very file by itself, without a gap.
+            already = self._in_end_handler and planned == path and not options
             try:
-                self.player.loadfile(path, mode="replace", **options)
+                set_prop(self.player, "sub-visibility", bool(self.settings["show_subtitles"]))
+                if not already:
+                    self.player.loadfile(path, mode="replace", **options)
+                    self._loadfile_count += 1
                 self.player.pause = False
             except Exception:          # noqa: BLE001
                 log.exception("Could not start %s", path)
@@ -2730,6 +2947,67 @@ class MediaWindow(QMainWindow):
             self._set_play_ui(True)
             self.track_timer.start()
             self._update_media_controls()
+            self._prefetch_next()
+
+    # ------------------------------------------------------------------ gapless playback
+    def _planned_next_path(self):
+        """The track ALMP will play after this one ends by itself, or None when that is not certain
+        (Loop One, the sleep timer stops at the end, the end of the list...)."""
+        n = len(self.store)
+        if not n or self._loop_mode == LOOP_ONE or self._sleep_end_of_track:
+            return None
+        for p in self.queue:
+            if self.store.contains(p):
+                return p
+        cur = self.current_index
+        paths = self.store.paths
+        if self.shuffle_enabled:
+            played = self._played_paths
+            all_played = sum(1 for p in paths if p in played) >= n
+            if all_played and self._loop_mode != LOOP_ALL:
+                return None
+            idx = pick_shuffle_index(paths, set() if all_played else set(played), cur)
+            if idx < 0 or idx == cur:
+                return None
+            self._planned_shuffle = paths[idx]
+            return paths[idx]
+        nxt = cur + 1
+        if nxt >= n:
+            return paths[0] if self._loop_mode == LOOP_ALL and n > 1 else None
+        return paths[nxt]
+
+    def _prefetch_next(self):
+        """Gapless playback: put the next track in mpv's own list, so mpv can read it ahead and go on
+        without a gap. ALMP still decides what plays next; if it decides differently, it simply loads
+        its own choice (see play_index)."""
+        self._gapless_next = None
+        self._planned_shuffle = None
+        if not self.player or not self.settings.get("gapless"):
+            return
+        try:
+            self.player.command("playlist-clear")          # keeps the playing file, drops the rest
+        except Exception:          # noqa: BLE001
+            log.debug("playlist-clear refused", exc_info=True)
+            return
+        path = self._planned_next_path()
+        if not path:
+            return
+        if self.settings["resume_long_files"] and resume_start_for(self._positions, self._resume_key(path)):
+            return                          # it starts in the middle: load it normally
+        try:
+            self.player.command("loadfile", path, "append")
+            self._gapless_next = path
+        except Exception:          # noqa: BLE001
+            log.debug("Could not queue %s for gapless playback", path, exc_info=True)
+
+    def _drop_prefetch(self):
+        if self._gapless_next and self.player:
+            try:
+                self.player.command("playlist-clear")
+            except Exception:          # noqa: BLE001
+                log.debug("playlist-clear refused", exc_info=True)
+        self._gapless_next = None
+        self._planned_shuffle = None
 
     def play_or_resume(self):
         if not self.player or not self.store:
@@ -2790,7 +3068,10 @@ class MediaWindow(QMainWindow):
         if self._play_queued():
             return
         if self.shuffle_enabled:
-            idx = pick_shuffle_index(self.store.paths, self._played_paths, self.current_index)
+            planned, self._planned_shuffle = self._planned_shuffle, None
+            idx = self.store.index_of(planned) if planned and planned not in self._played_paths else -1
+            if idx < 0 or idx == self.current_index:
+                idx = pick_shuffle_index(self.store.paths, self._played_paths, self.current_index)
             if idx >= 0:
                 self.play_index(idx)
         else:
@@ -2802,6 +3083,25 @@ class MediaWindow(QMainWindow):
     def _handle_end_file(self, reason):
         if self._closing:
             return
+        if str(reason).upper() != "EOF" or not self._gapless_next:
+            self._handle_end_file_inner(reason)
+            return
+        # Gapless: mpv has already started the planned next track. If ALMP decides on something
+        # else, play_index loads that; if it decides to stop, mpv is stopped here.
+        loads = self._loadfile_count
+        planned_path = self._gapless_next
+        self._in_end_handler = True
+        try:
+            self._handle_end_file_inner(reason)
+        finally:
+            self._in_end_handler = False
+        if self.current_path != planned_path and loads == self._loadfile_count and self.player:
+            try:
+                self.player.stop()
+            except Exception:          # noqa: BLE001
+                log.debug("stop refused", exc_info=True)
+
+    def _handle_end_file_inner(self, reason):
         reason = str(reason).upper()
         if reason == "ERROR":
             self._error_streak += 1

@@ -14,9 +14,27 @@ Why this is fast with 100,000+ files:
 import ntpath
 import os
 
+from .media import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+
 # Separates the file name from its folder name inside the search text, so a search never matches
 # across the two (it is a character nobody types).
 _SEP = "\x1f"
+
+
+# The All / Video / Audio filter: decided by the file extension only (no disk reads).
+KIND_AUDIO = 1
+KIND_VIDEO = 2
+KINDS = {"audio": KIND_AUDIO, "video": KIND_VIDEO}
+
+
+def kind_of(path):
+    """1 = audio, 2 = video, 0 = other (by extension; cheap: no splitext, no disk access)."""
+    ext = "." + path.rpartition(".")[2].lower()
+    if ext in AUDIO_EXTENSIONS:
+        return KIND_AUDIO
+    if ext in VIDEO_EXTENSIONS:
+        return KIND_VIDEO
+    return 0
 
 
 def make_entry(path, normcase=os.path.normcase):
@@ -45,6 +63,9 @@ class PlaylistStore:
         self.search = []
         self._keys = set()
         self.version = 0
+        # File kinds for the All / Video / Audio filter, made only when that filter is first used
+        # (so adding files costs nothing extra) and then extended as files are appended.
+        self._kinds = bytearray()
 
     # --- reading ---
     def __len__(self):
@@ -61,6 +82,14 @@ class PlaylistStore:
 
     def contains_key(self, key):
         return key in self._keys
+
+    def kinds(self):
+        """bytearray with kind_of() of every row (built on first use, then kept up to date)."""
+        k = self._kinds
+        n = len(k)
+        if n < len(self.paths):
+            k.extend(kind_of(p) for p in self.paths[n:])
+        return k
 
     def index_of(self, path, hint=-1):
         """Row of `path`, or -1. `hint` (a row where it probably is) makes the usual case O(1)."""
@@ -118,6 +147,8 @@ class PlaylistStore:
     def remove_at(self, row):
         path = self.paths.pop(row)
         self.search.pop(row)
+        if row < len(self._kinds):
+            del self._kinds[row]
         self._keys.discard(self.key_of(path))
         self.version += 1
         return path
@@ -131,6 +162,11 @@ class PlaylistStore:
         s = self.search.pop(src)
         self.paths.insert(dst, p)
         self.search.insert(dst, s)
+        if max(src, dst) < len(self._kinds):
+            k = self._kinds.pop(src)
+            self._kinds.insert(dst, k)
+        else:
+            self._kinds = bytearray()
         self.version += 1
         return True
 
@@ -138,6 +174,7 @@ class PlaylistStore:
         self.paths = []
         self.search = []
         self._keys = set()
+        self._kinds = bytearray()
         self.version += 1
 
     def reorder(self, order):
@@ -147,13 +184,19 @@ class PlaylistStore:
             raise ValueError("not a permutation of the rows")
         self.paths = [self.paths[i] for i in order]
         self.search = [self.search[i] for i in order]
+        self._kinds = bytearray()
         self.version += 1
 
     # --- filtering ---
-    def filter_rows(self, words, within=None):
+    def filter_rows(self, words, within=None, kind=None):
         """Rows whose search text contains every word. `within` (a list of rows) limits the search,
-        e.g. to the previous matches when the user only typed more letters."""
+        e.g. to the previous matches when the user only typed more letters. `kind` ("audio" or
+        "video") keeps only that type of file."""
         search = self.search
+        code = KINDS.get(kind)
+        if code:
+            kinds = self.kinds()
+            within = [i for i in (range(len(search)) if within is None else within) if kinds[i] == code]
         if not words:
             return list(range(len(search))) if within is None else list(within)
         first, rest = words[0], words[1:]

@@ -1,10 +1,13 @@
 # Alexbed Light Media Player (ALMP)
 
 A simple, free media player for Windows, built on the [mpv](https://mpv.io) playback engine.
+ALMP (A-L-M-P, Alexbed Light Media Player) is not related to AIMP.
 ALMP is made for people who just want to press play: big clear buttons, a dark modern look,
 and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen](images/screenshot-v8.2-welcome.png)
+
+![ALMP 8.2.4 playing music: All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.4-window.png)
 
 ![ALMP 8.2 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.2-playing.png)
 
@@ -14,10 +17,13 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.3 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.4 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
 
-**New in 8.2.3:** fullscreen opens at once (no more half-drawn control bar), a double-clicked video gets the whole window, a new setting plays every video in fullscreen, and "Play with ALMP" / "Add to ALMP playlist" in the right-click menu for many selected files.
-See the [release notes](docs/release-notes/v8.2.3.md).
+**New in 8.2.4:** ALMP keeps all its files in a `Data` folder next to `ALMP.exe` (delete the folder and it is gone),
+a small log that is cleared on close, *Show subtitles* (off until you turn it on), **All / Video / Audio** filter,
+`Ctrl+S` saves only what is shown, the format of the playing track (e.g. *FLAC - 24-bit / 96 kHz*), optional gapless
+playback and exclusive audio, video upscaling (Standard / Sharp / High quality), and a fix for the fullscreen controls
+not appearing while music plays. See the [release notes](docs/release-notes/v8.2.4.md).
 
 ALMP is free and will stay free. It is built to help people who need an easy, no-cost player,
 and it is not a commercial product.
@@ -32,13 +38,17 @@ and it is not a commercial product.
   the rows you can see, and search runs over a ready-made index. Measured numbers are in
   [Performance](#performance) below (and how to measure your own PC).
 - **Search** by file or folder name as you type (`Ctrl+F`); every word must match. Enter plays the first match.
+  **All / Video / Audio** buttons under the search box show one type of file (by file type, no disk reads),
+  together with the search. **Save the playlist** (`Ctrl+S`) as `.m3u8`; with a search or filter on, only what
+  is shown is saved.
 - **Right-click a track** for *Play*, *Play next*, *Move up / down*, *Remove from list*, *Show in folder*,
   *Copy file path*, *Delete file...* and *Sort*. Right-click the video for play, tracks, subtitles and size.
 - **Play next** queue, and **sorting** by name ("Track 2" before "Track 10", like Explorer), by folder, or reversed.
 - **Starts clean.** ALMP does not remember the last playlist, so it opens fast and stays light.
 - **Settings in one place** (gear button, `Ctrl+,`): high contrast, interface size, video size, *Remove played*,
   keep the playback speed, *Even out loud and quiet parts* (volume normaliser), volume up to 150%,
-  subtitle size and a dark box behind subtitles, media keys in the background, *Run at Startup*, and
+  show subtitles (remembered, off until you turn it on), subtitle size and a dark box behind subtitles,
+  video upscaling (Standard / Sharp / High quality, mpv's own scalers), media keys in the background, *Run at Startup*, and
   **Make ALMP my default player** / **"Play with ALMP" and "Add to ALMP playlist"** when you right-click
   files (one or many) or a folder in Explorer (your Windows account only, can be undone).
 - **High-contrast theme** (black, white and yellow) for every part of the window, including the welcome screen.
@@ -61,13 +71,25 @@ and it is not a commercial product.
   one plays. Selecting many files and pressing Enter works too.
 - **Shuffle, loop and "remove played".** **Loop: Off / One / All** (`L`). Loop All switches "Remove played" off so
   the list never empties. The loop choice is not remembered. "Remove played" is off for new installs.
+- **For music collections:** the playing bar shows the format of the playing track (for example
+  *FLAC - 24-bit / 96 kHz*); optional **gapless playback** (the next track is read ahead) and optional
+  **exclusive audio** (WASAPI exclusive, bit-perfect, for external DACs and AV receivers; other programs are
+  silent while ALMP plays). Both are off unless you switch them on.
 - **Album art**, hardware decoding, click-to-seek, floating fullscreen controls, audio tracks and subtitles,
   snapshots (`S`), Fit / Fill / Stretch (`A`).
 - **Help and About** inside the app (version, licence, third-party notices, *Open log folder*).
 - **Portable and offline.** No installer, no admin rights. ALMP never connects to the internet, has no
-  auto-update and no telemetry.
-- **Error log on your PC only.** If something goes wrong, ALMP keeps running and writes a short report to
-  `%LOCALAPPDATA%\ALMP\almp.log`. It is never sent anywhere (it can contain file names).
+  auto-update and no telemetry. *Help > About* shows the address of the Releases page with a *Copy link*
+  button (it only copies the text; ALMP does not open or check anything).
+- **Leaves nothing behind.** ALMP keeps its settings and a small log in a `Data` folder next to `ALMP.exe`, so
+  deleting the ALMP folder removes everything. Only if that folder cannot be written to (for example in
+  Program Files) does ALMP use `%APPDATA%\ALMP` and `%LOCALAPPDATA%\ALMP` instead (Settings says so).
+  Files from versions before 8.2.4 are moved into `Data` once. The Windows entries for Default apps, the
+  right-click menu and Run at Startup only exist if you turn them on, and can be removed in Settings or with
+  `Remove-ALMP-Defaults.bat`.
+- **Small log, cleared on close.** The log (at most 256 KB) is deleted when ALMP closes normally, unless
+  something went wrong during that run (then it is kept so the problem can be looked at). Settings >
+  *Privacy and files* can keep the last run or switch the log off. It is never sent anywhere.
 
 ## Download and run (Windows)
 
@@ -80,8 +102,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.2.3-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.3-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.2.4-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.4-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
@@ -116,6 +138,7 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 | L | Loop: Off, One (this track), All (whole playlist) |
 | Ctrl+F | Search the playlist (Down goes to the list, Esc clears) |
 | Ctrl+O / Ctrl+Shift+O | Add files / add a folder |
+| Ctrl+S | Save the playlist (only the shown items when a search or filter is on) |
 | Ctrl+, | Settings |
 | Enter | Play the selected playlist item |
 | Delete / Shift+Delete | Remove from the list / delete the file (asks first) |
@@ -231,7 +254,8 @@ Reapplying later, or a paid option, is still open. Until then, please check each
 (see above). Details: [SIGNING.md](SIGNING.md).
 
 **Privacy:** ALMP works fully offline. It does not send any information to other computers or networks.
-Settings and the error log stay on your PC (`%APPDATA%\ALMP` and `%LOCALAPPDATA%\ALMP`).
+Settings and the small log stay in the `Data` folder next to `ALMP.exe` (or in `%APPDATA%\ALMP` and
+`%LOCALAPPDATA%\ALMP` when that folder cannot be written to).
 
 ## Community & Roadmap
 - See [ROADMAP.md](ROADMAP.md) for what is coming next.

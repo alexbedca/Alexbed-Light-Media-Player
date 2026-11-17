@@ -1,14 +1,14 @@
 {
     "##": "DRAFT Scoop manifest for ALMP - NOT submitted. Replace the hash with the real zip's SHA-256 before use. See packaging/README.md.",
-    "version": "8.2.3",
+    "version": "8.2.4",
     "description": "A simple, free, offline media player for Windows with big clear buttons, built on mpv.",
     "homepage": "https://github.com/alexbedca/Alexbed-Light-Media-Player",
     "license": "GPL-3.0-or-later",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.2.3/ALMP-v8.2.3-Portable.zip",
+            "url": "https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.2.4/ALMP-v8.2.4-Portable.zip",
             "hash": "0000000000000000000000000000000000000000000000000000000000000000",
-            "extract_dir": "ALMP-v8.2.3-Portable"
+            "extract_dir": "ALMP-v8.2.4-Portable"
         }
     },
     "bin": "ALMP.exe",
@@ -30,7 +30,7 @@
         }
     },
     "notes": [
-        "ALMP keeps its settings in %APPDATA%\\ALMP and an error log (if any) in %LOCALAPPDATA%\\ALMP.",
+        "ALMP keeps its settings and a small log in a Data folder next to ALMP.exe (or in %APPDATA%\\ALMP and %LOCALAPPDATA%\\ALMP if that folder cannot be written to).",
         "To make ALMP your default player, open ALMP > Settings (gear button) > Make ALMP my default player."
     ]
 }
