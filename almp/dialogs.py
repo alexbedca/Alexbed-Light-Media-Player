@@ -25,10 +25,32 @@ from PyQt6.QtWidgets import (
 
 from . import APP_TITLE, __version__
 from .logsetup import log
-from .paths import get_log_dir, get_resource_path
-from .settings import LARGE_BUTTON_CHOICES, SCALE_CHOICES, SUBTITLE_SIZE_CHOICES, VIDEO_SIZE_CHOICES
+from .paths import data_dir_is_portable, get_log_dir, get_resource_path, get_settings_dir
+from .settings import (
+    LARGE_BUTTON_CHOICES,
+    LOG_MODE_CHOICES,
+    SCALE_CHOICES,
+    SUBTITLE_SIZE_CHOICES,
+    UPSCALING_CHOICES,
+    VIDEO_SIZE_CHOICES,
+)
 
 PROJECT_PAGE = "github.com/alexbedca/Alexbed-Light-Media-Player"
+RELEASES_PAGE = PROJECT_PAGE + "/releases"
+RELEASES_URL = "https://" + RELEASES_PAGE          # what "Copy link" puts on the clipboard (text only)
+
+LOG_MODE_NOTES = {
+    "clear": "The log is deleted when ALMP closes normally. If something went wrong during that run, "
+             "it is kept (at most 256 KB) so the problem can be looked at.",
+    "keep": "The log of the last run is kept (at most 256 KB, plus the run before it). "
+            "It can contain names of files you played.",
+    "off": "No log file is written at all. If something goes wrong, there are no details to look at, "
+           "and tools/bench_startup.py cannot measure start-up times.",
+}
+UPSCALING_NOTE = ("Only matters when a video is smaller than the screen (for example 480p or 720p on a "
+                  "1080p screen). Sharp and High quality use mpv's own built-in scalers (nothing is "
+                  "downloaded). High quality needs more graphics power and may stutter on slower "
+                  "graphics cards.")
 
 KEYBOARD_ROWS = [
     ("Space", "Play / pause"),
@@ -76,8 +98,9 @@ volume to go up to 150%.</p>
 <h3>Is my download real?</h3>
 <p>Only download ALMP from its GitHub Releases page and compare the SHA-256 code (see the README).</p>
 <h3>ALMP and your privacy</h3>
-<p>ALMP never connects to the internet. It keeps your settings and, if something went wrong,
-a small error log on this PC only (the log can contain file names; it is never sent anywhere).</p>
+<p>ALMP never connects to the internet. It keeps its settings and a small log in the <b>Data</b>
+folder next to ALMP.exe, so deleting the ALMP folder removes everything. The log is cleared when
+ALMP closes, unless something went wrong (Settings &gt; Privacy and files). It is never sent anywhere.</p>
 """
 
 
@@ -190,11 +213,27 @@ class AboutDialog(QDialog):
             "ALMP never connects to the internet, has no ads and no tracking.\n\n"
             f"Project page (copy it into your browser): {PROJECT_PAGE}\n\n"
             + self.info_text)
+        self.releases_text = (
+            f"Newer versions: {RELEASES_PAGE}\n"
+            "ALMP never connects to the internet; open this address yourself to look for a newer version.")
         body.setObjectName("helpText")
         body.setWordWrap(True)
         body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
                                      | Qt.TextInteractionFlag.TextSelectableByKeyboard)
         lay.addWidget(body)
+        rel_row = QHBoxLayout()
+        rel = QLabel(self.releases_text)
+        rel.setObjectName("helpText")
+        rel.setWordWrap(True)
+        rel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
+                                    | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        rel_row.addWidget(rel, 1)
+        self.copy_link = QPushButton("Copy link")
+        self.copy_link.setToolTip("Copies the address only. ALMP does not open a browser or check anything.")
+        self.copy_link.setAccessibleName("Copy the address of the releases page")
+        self.copy_link.clicked.connect(self.copy_releases_link)
+        rel_row.addWidget(self.copy_link, 0, Qt.AlignmentFlag.AlignTop)
+        lay.addLayout(rel_row)
         grid = QGridLayout()
         b_lic = QPushButton("Licence (GPL)...")
         b_lic.clicked.connect(lambda: self._show_file("LICENSE", "Licence"))
@@ -214,6 +253,10 @@ class AboutDialog(QDialog):
         close.clicked.connect(self.accept)
         lay.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
         close.setFocus()
+
+    def copy_releases_link(self):
+        QGuiApplication.clipboard().setText(RELEASES_URL)
+        self.copy_link.setText("Copied")
 
     def _show_file(self, name, title):
         text = read_text_file(name)
@@ -387,10 +430,48 @@ class SettingsDialog(QDialog):
         self.forget.clicked.connect(win.forget_resume_positions)
         row.addWidget(self.forget)
         lay.addLayout(row)
+
+        row = QHBoxLayout()
+        lbl = QLabel("Video upscaling:")
+        self.upscaling = QComboBox()
+        up_values = [v for _l, v in UPSCALING_CHOICES]
+        for label, _v in UPSCALING_CHOICES:
+            self.upscaling.addItem(label)
+        self.upscaling.setCurrentIndex(up_values.index(s["upscaling"]) if s["upscaling"] in up_values else 0)
+        self.upscaling.setAccessibleName("Video upscaling")
+        self.upscaling.currentIndexChanged.connect(lambda i: win.set_upscaling(up_values[i]))
+        lbl.setBuddy(self.upscaling)
+        row.addWidget(lbl)
+        row.addWidget(self.upscaling, 1)
+        lay.addLayout(row)
+        lay.addWidget(_note(UPSCALING_NOTE))
+        lay.addWidget(_line())
+
+        # --- Music (lossless) ---
+        lay.addWidget(_section("Music"))
+        self.gapless = QCheckBox("Gapless playback (prefetch the next track)")
+        self.gapless.setChecked(bool(s["gapless"]))
+        self.gapless.setToolTip("Live albums and DJ mixes play without a short silence between tracks.\n"
+                                "ALMP reads the start of the next track while this one plays.")
+        self.gapless.toggled.connect(win.set_gapless)
+        lay.addWidget(self.gapless)
+        self.exclusive = QCheckBox("Exclusive audio (WASAPI exclusive, bit-perfect)")
+        self.exclusive.setChecked(bool(s["audio_exclusive"]))
+        self.exclusive.toggled.connect(win.set_audio_exclusive)
+        lay.addWidget(self.exclusive)
+        lay.addWidget(_note("For FLAC listeners with an external DAC or AV receiver: the sound goes to the "
+                            "device untouched (no Windows mixing). While ALMP plays, OTHER programs and "
+                            "Windows sounds are silent. ALMP's volume slider still works."))
         lay.addWidget(_line())
 
         # --- Subtitles ---
         lay.addWidget(_section("Subtitles"))
+        self.show_subs = QCheckBox("Show subtitles")
+        self.show_subs.setChecked(bool(s["show_subtitles"]))
+        self.show_subs.setToolTip("Remembered for the next time. Off: subtitles stay hidden until you turn them on\n"
+                                  "here or in the subtitles menu (right-click the video).")
+        self.show_subs.toggled.connect(win.set_show_subtitles)
+        lay.addWidget(self.show_subs)
         row = QHBoxLayout()
         lbl = QLabel("Subtitle size:")
         self.sub_size = QComboBox()
@@ -408,6 +489,26 @@ class SettingsDialog(QDialog):
         self.sub_box.setChecked(bool(s["subtitle_background"]))
         self.sub_box.toggled.connect(win.set_subtitle_background)
         lay.addWidget(self.sub_box)
+        lay.addWidget(_line())
+
+        # --- Privacy and files ---
+        lay.addWidget(_section("Privacy and files"))
+        row = QHBoxLayout()
+        lbl = QLabel("Log:")
+        self.log_mode = QComboBox()
+        log_values = [v for _l, v in LOG_MODE_CHOICES]
+        for label, _v in LOG_MODE_CHOICES:
+            self.log_mode.addItem(label)
+        self.log_mode.setCurrentIndex(log_values.index(s["log_mode"]) if s["log_mode"] in log_values else 0)
+        self.log_mode.setAccessibleName("Log")
+        lbl.setBuddy(self.log_mode)
+        row.addWidget(lbl)
+        row.addWidget(self.log_mode, 1)
+        lay.addLayout(row)
+        self.log_note = _note(LOG_MODE_NOTES.get(s["log_mode"], ""))
+        lay.addWidget(self.log_note)
+        self.log_mode.currentIndexChanged.connect(lambda i: self._log_mode_changed(log_values[i]))
+        lay.addWidget(_note(data_folder_text()))
         lay.addWidget(_line())
 
         lay.addStretch(1)
@@ -462,12 +563,29 @@ class SettingsDialog(QDialog):
         except RuntimeError:
             pass                      # the dialog is closed
 
+    def _log_mode_changed(self, mode):
+        self.win.set_log_mode(mode)
+        self.log_note.setText(LOG_MODE_NOTES.get(mode, ""))
+
     def _folder_verb_toggled(self, on):
         ok = self.win.set_folder_verb(on)
         if not ok:
             self.folder_verb.blockSignals(True)
             self.folder_verb.setChecked(not on)
             self.folder_verb.blockSignals(False)
+
+
+def data_folder_text(portable=None, folder=None):
+    """Where ALMP keeps its files, in plain words, for Settings."""
+    portable = data_dir_is_portable() if portable is None else portable
+    folder = get_settings_dir() if folder is None else folder
+    if portable:
+        return (f"ALMP keeps its settings and log in {folder}. Nothing else is stored on this PC, "
+                "so deleting the ALMP folder removes everything (Windows entries such as Default apps, "
+                "the right-click menu or Run at Startup only exist if you turned them on above).")
+    return (f"The ALMP folder cannot be written to (for example in Program Files or on a read-only USB "
+            f"stick), so settings are kept in {folder} and the log in {get_log_dir()}. "
+            "Move the ALMP folder somewhere you can write to, to keep everything inside it.")
 
 
 def describe_engine(player):

@@ -25,8 +25,18 @@ NORMAL_MAX_VOLUME = 100
 VIDEO_SIZES = ("fit", "fill", "stretch")
 VIDEO_SIZE_NAMES = {"fit": "Fit", "fill": "Fill (cropped)", "stretch": "Stretch"}
 
+# Video upscaling (Settings > Playback). Only mpv's own built-in scalers: no shader files, no downloads.
+# "standard" puts back whatever mpv used when ALMP started (read once, see _init_player).
+SCALER_KEYS = ("scale", "cscale", "dscale")
+UPSCALING_PROPERTIES = {
+    "standard": {},
+    "sharp": {"scale": "spline36", "cscale": "spline36", "dscale": "mitchell"},
+    "high": {"scale": "ewa_lanczossharp", "cscale": "ewa_lanczossharp", "dscale": "mitchell"},
+}
 
-def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=None, proc_version=None):
+
+def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=None, proc_version=None,
+                show_subtitles=False, gapless=False, audio_exclusive=False):
     """The options ALMP starts mpv with. Pure: easy to check in tests.
     The volume normaliser and the subtitle box are switched on after start (set_audio_filter,
     subtitle_background_options), so an mpv build without them can never stop playback from starting."""
@@ -51,7 +61,12 @@ def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=Non
         volume_max=str(BOOST_MAX_VOLUME if boost else NORMAL_MAX_VOLUME),
         sub_scale=str(float(subtitle_scale)),
         sub_auto="fuzzy",
+        # Subtitles are loaded (so they can be switched on at any time) but only shown when wanted.
+        sub_visibility="yes" if show_subtitles else "no",
     )
+    opts.update(gapless_options(gapless))
+    if audio_exclusive:
+        opts["audio_exclusive"] = "yes"
     if platform.startswith("linux"):
         forced_vo = environ.get("ALMP_VO")
         if forced_vo:
@@ -66,6 +81,59 @@ def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=Non
             if "microsoft" in proc_version.lower():
                 opts.update(vo="x11", hwdec="no", profile="fast", vd_lavc_fast=True)
     return opts
+
+
+def gapless_options(on):
+    """mpv options for "Gapless playback": keep the sound device open between tracks of the same
+    format, and read the start of the next track while this one plays."""
+    if on:
+        return {"gapless_audio": "yes", "prefetch_playlist": "yes"}
+    return {"gapless_audio": "weak", "prefetch_playlist": "no"}
+
+
+def upscaling_properties(level, standard=None):
+    """mpv properties for Standard / Sharp / High quality. `standard` = mpv's own values at start."""
+    if level in ("sharp", "high"):
+        return dict(UPSCALING_PROPERTIES[level])
+    return dict(standard or {})
+
+
+_SAMPLE_FORMAT_BITS = {"u8": 8, "s16": 16, "s24": 24, "s32": 32, "u8p": 8, "s16p": 16, "s32p": 32,
+                       "float": "32-bit float", "floatp": "32-bit float", "double": "64-bit float",
+                       "doublep": "64-bit float"}
+_LOSSLESS_EXT = {".flac": "FLAC", ".wav": "WAV", ".aiff": "AIFF", ".aif": "AIFF", ".aifc": "AIFF",
+                 ".ape": "APE", ".alac": "ALAC", ".wv": "WavPack", ".tta": "TTA", ".dsf": "DSD", ".dff": "DSD"}
+
+
+def audio_format_text(ext, codec=None, samplerate=None, bits=None, sample_format=None):
+    """'FLAC - 24-bit / 96 kHz' for the playing bar, from what is known about the playing track only.
+    `bits` comes from the file's own header (exact); without it the decoder's sample format is used,
+    except s32/float, which decoders also use for 24-bit or lossy audio (so they would mislead)."""
+    ext = (ext or "").lower()
+    name = _LOSSLESS_EXT.get(ext)
+    if name is None:
+        c = (codec or "").strip()
+        name = c.upper() if c else ext.lstrip(".").upper()
+    if (codec or "").lower() == "alac":
+        name = "ALAC"                  # Apple Lossless inside an .m4a file
+    parts = []
+    depth = None
+    if isinstance(bits, int) and bits > 0:
+        depth = f"{bits}-bit"
+    elif ext in _LOSSLESS_EXT and sample_format in ("s16", "s16p", "s24", "u8", "u8p"):
+        depth = f"{_SAMPLE_FORMAT_BITS[sample_format]}-bit"
+    if depth:
+        parts.append(depth)
+    try:
+        rate = int(samplerate or 0)
+    except (TypeError, ValueError):
+        rate = 0
+    if rate > 0:
+        khz = rate / 1000
+        parts.append(f"{khz:g} kHz" if khz != int(khz) else f"{int(khz)} kHz")
+    if not name:
+        return ""
+    return f"{name} - {' / '.join(parts)}" if parts else name
 
 
 def subtitle_background_options(on):

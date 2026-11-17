@@ -99,6 +99,8 @@ BASE_QSS = """
     QPushButton:disabled { color: #666666; border-color: #262626; }
     #transportButton { font-size: 15px; padding: 9px 16px; {SEMIBOLD}; }
     #removeButton { color: #ffb86b; }
+    #kindButton { padding: 4px 8px; }
+    #kindButton:checked { background-color: #19c8e6; color: #04222a; border-color: #19c8e6; }
     #dangerButton { color: #ff6b6b; font-weight: bold; }
     #closeButton:hover { background-color: #c42b1c; border-color: #c42b1c; }
     #closeButton:pressed { background-color: #a32316; }
@@ -175,6 +177,7 @@ HIGH_CONTRAST_QSS = """
     QPushButton:disabled { color: #bdbdbd; border-color: #bdbdbd; }
     #playButton, #welcomePrimary { background-color: #ffff00; color: #000000; border: 2px solid #ffff00; }
     #welcomeSecondary { background-color: #000000; color: #ffffff; border: 2px solid #ffffff; }
+    #kindButton:checked { background-color: #ffff00; color: #000000; border: 2px solid #ffff00; }
     #playlistView { background-color: #000000; border: 2px solid #ffffff; selection-background-color: #ffff00; selection-color: #000000; }
     #playlistView::item:hover { background-color: #000000; border: 1px solid #ffff00; }
     #playlistView::item:selected { background-color: #ffff00; color: #000000; }
