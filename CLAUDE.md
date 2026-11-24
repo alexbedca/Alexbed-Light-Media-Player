@@ -5,7 +5,11 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.7 released 2026-11-17 (Latest; picture sharpening: built-in FSRCNNX in `shaders-builtin/`
+- **Status:** v8.2.8 released 2026-11-24 (Latest; one taskbar button when pinned: no own AppUserModelID;
+  full-width punctuation in file names drawn as ASCII by `media.screen_text`, which ended a ~14 s freeze).
+  Submitted to winget 2026-11-24 (microsoft/winget-pkgs PR #488105, multi-file manifests from the fork
+  alexbedca/winget-pkgs; needs Alexander's CLA). Listed on the mpv wiki "Applications using mpv".
+  v8.2.7 released 2026-11-17 ( picture sharpening: built-in FSRCNNX in `shaders-builtin/`
   for videos <= 720p, auto switch-off on dropped frames, E key, shader cache in Data; ReplayGain setting, Off by
   default). v8.2.6 released 2026-11-17 (Settings is no longer modal, so the player's buttons work
   while it is open, even in fullscreen; Settings is wide enough for every line). v8.2.5 released 2026-11-17 (select several playlist items to remove/delete, optional
@@ -14,8 +18,8 @@ media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no 
   audio, upscaling levels, Releases link in About, fullscreen music controls fix). v8.2.3 released 2026-11-14. Public repo https://github.com/alexbedca/Alexbed-Light-Media-Player
   (GPL-3.0-or-later). Release asset: `ALMP-vX.Y.Z-Portable.zip` + SHA-256. Not code-signed (SignPath declined
   for now; see `SIGNING.md`).
-- **Next:** see `ROADMAP.md` (open items: bigger fullscreen drawer/text for TVs, winget/Scoop submission from
-  `packaging/`).
+- **Next:** see `ROADMAP.md` (open items: bigger fullscreen drawer/text for TVs, Scoop submission, follow the
+  winget PR; for every release also update the winget manifest: version, URL, SHA-256).
 - **Read first:** `README.md` (features, performance numbers, build), `ROADMAP.md`, `docs/release-notes/`,
   `docs/MANUAL-TEST-v8.1.md` (manual Windows test checklist).
 
@@ -65,6 +69,11 @@ Set-/Remove-ALMP-Defaults.bat  shipped in the zip: default-player registration /
   at start ALMP re-points Alexander's Explorer right-click entries ("Play with ALMP") to whichever exe runs.
   If it happens, start the installed copy once (it points them back) and check HKCU\Software\Classes. Test
   builds from source (drive scripts) or in the installed copy instead (2026-11-17).
+- **Fonts (8.2.8):** Alexander's PC has 6,674 font families. Any character "Segoe UI" lacks makes Qt (GDI font
+  list) search all of them: 6.3-6.8 s per text style, window frozen. `QFont.insertSubstitutions` fixes the draw
+  but moves the same 6.4 s into every start-up, so it was rejected. Show such text through `screen_text`.
+- **Taskbar (8.2.8):** never set an explicit AppUserModelID again: a pin of ALMP.exe then never matches the
+  window and Windows shows two buttons. Restarting Explorer can drop a pin made by dragging a shortcut.
 - **ReplayGain is Off by default (8.2.7):** in Alexander's library only 9 of 182 folders have real tags;
   with it on, those albums just played quieter. Picture sharpening: FSRCNNX costs a one-off ~3 s shader
   preparation (56 dropped frames) on the GTX 960, then 0 drops; the drop check ignores the first 1.5 s.
