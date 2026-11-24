@@ -142,7 +142,8 @@ def main(argv=None):
     if log_mode == "keep":
         start_new_run_log()
 
-    pw.set_app_user_model_id()
+    # v8.2.8: no explicit AppUserModelID. Windows groups ALMP's window with its taskbar pin by ALMP.exe's
+    # path; an own ID made a pin of ALMP.exe (or its shortcut) show a second taskbar button when playing.
 
     settings = effective_settings(load_settings())
     scale = 1.0

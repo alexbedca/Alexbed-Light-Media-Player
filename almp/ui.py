@@ -102,6 +102,7 @@ from .media import (
     VIDEO_EXTENSIONS,
     file_ext,
     is_audio_path,
+    screen_text,
     write_playlist_file,
 )
 from .naturalsort import natural_name_key, natural_path_key
@@ -378,7 +379,7 @@ class MediaWindow(QMainWindow):
                 pass
 
     def _status(self, text, announce=False):
-        self.status_label.setText(text)
+        self.status_label.setText(screen_text(text))
         if announce:
             self._announce(text)
 
@@ -976,7 +977,7 @@ class MediaWindow(QMainWindow):
 
     # ------------------------------------------------------------------ fullscreen title
     def _set_fs_title(self, name):
-        self._fs_title_full = name
+        self._fs_title_full = screen_text(name)
         self._fs_title_key = None
         self._layout_fs_title()
 
@@ -2578,7 +2579,7 @@ class MediaWindow(QMainWindow):
         self.video.setMouseTracking(True)
 
         has_bin = pw.recycle_bin_available(path)
-        name = Path(path).name
+        name = screen_text(Path(path).name)
         if has_bin:
             title = "Delete File"
             message = f"Send this file to the Recycle Bin?\n\n{name}\n\nYou can restore it from the Recycle Bin later."
@@ -2685,7 +2686,7 @@ class MediaWindow(QMainWindow):
 
         n = len(paths)
         no_bin = {p for p in paths if not pw.recycle_bin_available(p)}
-        names = "\n".join(Path(p).name for p in paths[:5])
+        names = screen_text("\n".join(Path(p).name for p in paths[:5]))
         if n > 5:
             names += f"\n... and {n - 5} more"
         if not no_bin:

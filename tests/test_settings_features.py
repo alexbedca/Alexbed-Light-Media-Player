@@ -255,10 +255,17 @@ def test_windows_only_helpers_do_nothing_elsewhere(monkeypatch):
     monkeypatch.setattr(platform_win.sys, "platform", "linux")
     assert platform_win.show_in_explorer("/x") is False
     assert platform_win.folder_verb_installed() is False
-    assert platform_win.set_app_user_model_id() is False
     assert platform_win.open_default_apps_settings() is False
     assert platform_win.set_folder_verb("x", True)[0] is False
-    assert platform_win.APP_USER_MODEL_ID == "Alexbed.ALMP"          # no version: pins survive updates
+
+
+def test_no_own_taskbar_id_so_pins_group():
+    # 8.2.8: an explicit AppUserModelID split ALMP from its taskbar pin (two buttons while playing).
+    # Windows must group the window by ALMP.exe's path, like a pin of ALMP.exe.
+    import pathlib
+    src = "".join(p.read_text(encoding="utf-8") for p in pathlib.Path(platform_win.__file__).parent.glob("*.py"))
+    assert "SetCurrentProcessExplicitAppUserModelID" not in src
+    assert not hasattr(platform_win, "APP_USER_MODEL_ID")
 
 
 # --- mpv options: offline and locked down ---------------------------------------------
