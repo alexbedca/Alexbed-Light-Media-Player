@@ -32,6 +32,20 @@ def file_ext(name):
     return os.path.splitext(name)[1].lower()
 
 
+# Full-width punctuation ("｜", "＂", "？", "：" ...) that download tools put into file names
+# instead of the characters Windows does not allow. "Segoe UI" has none of them, and with Qt's
+# GDI font list Qt then searched every installed font: 6.3 s per text style with 6,674 font
+# families (about 14 s in all: the window froze right after opening such a file). They are shown
+# as their ordinary ASCII twins; the file itself is never renamed.
+_SCREEN_MAP = {cp: cp - 0xFEE0 for cp in range(0xFF01, 0xFF5F)}
+_SCREEN_MAP[0x3000] = 0x20                     # full-width space
+
+
+def screen_text(text):
+    """`text` as ALMP draws it: full-width ASCII forms replaced by plain ASCII."""
+    return text.translate(_SCREEN_MAP) if text else text
+
+
 def is_media_name(name):
     return file_ext(name) in SUPPORTED_EXTENSIONS
 

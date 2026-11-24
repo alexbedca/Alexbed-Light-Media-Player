@@ -26,7 +26,6 @@ else:                      # names exist so tests can patch them
     winreg = None
     wintypes = None
 
-APP_USER_MODEL_ID = "Alexbed.ALMP"          # no version in it, so taskbar pins survive updates
 
 # --- Deleting files safely ---
 # USB sticks, memory cards, CDs and network drives have no Recycle Bin: Windows would delete
@@ -131,17 +130,6 @@ def send_to_recycle_bin(file_path, permanent=False, hwnd=0):
 
 
 # --- Small helpers ---
-
-def set_app_user_model_id():
-    if sys.platform != "win32":
-        return False
-    try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
-        return True
-    except Exception:          # noqa: BLE001
-        log.debug("SetCurrentProcessExplicitAppUserModelID failed", exc_info=True)
-        return False
-
 
 # --- Window frame after fullscreen ---
 # Leaving fullscreen, Windows sometimes leaves the window without its title bar and borders.

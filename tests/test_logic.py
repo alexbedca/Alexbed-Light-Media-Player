@@ -182,3 +182,27 @@ def test_large_buttons_setting_default_and_validation():
     assert effective_settings({})["large_buttons"] == "auto"
     assert effective_settings({"large_buttons": "never"})["large_buttons"] == "never"
     assert effective_settings({"large_buttons": "x"})["large_buttons"] == "auto"
+
+
+# --- 8.2.8: full-width punctuation in file names froze the window ------------------------
+
+def test_screen_text_shows_full_width_punctuation_as_ascii():
+    from almp.media import screen_text
+    name = "\u201cGolden\u201d Official Lyric Video \uff5c KPop \uff5c Sony-(1080p24).mp4"
+    assert screen_text(name) == "\u201cGolden\u201d Official Lyric Video | KPop | Sony-(1080p24).mp4"
+    assert screen_text("\uff02FRONTLINE\uff02 \uff1f\uff1a\uff0a\u3000x") == '"FRONTLINE" ?:* x'
+    assert screen_text("Ampadu - \u00c9t\u00e9 \u65e5\u672c.flac") == "Ampadu - \u00c9t\u00e9 \u65e5\u672c.flac"
+    assert screen_text("") == "" and screen_text(None) is None
+
+
+def test_playlist_shows_screen_text_but_keeps_the_real_path():
+    from PyQt6.QtCore import Qt
+
+    from almp.playlist_model import PathRole, PlaylistModel
+    from almp.store import make_entry
+    path = r"G:\v\A " + "\uff5c" + " B.mp4"
+    m = PlaylistModel()
+    m.append_entries([make_entry(path)])
+    ix = m.index(0, 0)
+    assert m.data(ix, Qt.ItemDataRole.DisplayRole) == "A | B.mp4"
+    assert m.data(ix, PathRole) == path

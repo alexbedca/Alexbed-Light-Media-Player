@@ -132,6 +132,12 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
 
+## 14. New in 8.2.8
+- [ ] Pin ALMP to the taskbar, close it, start it from the pin, then open a song from Explorer (ALMP open and
+      closed): only one ALMP button, on the pin.
+- [ ] Open a video whose name has "｜" or "＂" (YouTube downloads) and close ALMP after 3 s: it closes at
+      once; the playlist and status line show a plain "|" or '"'.
+
 ## 13. New in 8.2.7
 - [ ] Play a 480p or 360p video in fullscreen: the picture is sharper than in 8.2.6. The very first time on a PC
       it can stand still for about 3 seconds while the shader is prepared (later about 1 second).

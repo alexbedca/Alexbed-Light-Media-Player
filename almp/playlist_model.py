@@ -15,6 +15,7 @@ import ntpath
 from PyQt6.QtCore import QAbstractListModel, QByteArray, QMimeData, QModelIndex, Qt
 from PyQt6.QtGui import QColor, QFont
 
+from .media import screen_text
 from .store import PlaylistStore, is_refinement, split_query
 
 ROW_MIME = "application/x-almp-playlist-rows"
@@ -76,6 +77,8 @@ class PlaylistModel(QAbstractListModel):
             return None
         if role == Qt.ItemDataRole.DisplayRole or role == Qt.ItemDataRole.AccessibleTextRole:
             name = ntpath.basename(self.store.paths[s])
+            if role == Qt.ItemDataRole.DisplayRole:
+                name = screen_text(name)
             if self.queued is not None:
                 pos = self.queued(self.store.paths[s])
                 if pos:
@@ -84,7 +87,7 @@ class PlaylistModel(QAbstractListModel):
                 return "Playing: " + name
             return name
         if role == Qt.ItemDataRole.ToolTipRole:
-            return self.store.paths[s]
+            return screen_text(self.store.paths[s])
         if role == PathRole:
             return self.store.paths[s]
         if role == SourceRowRole:
