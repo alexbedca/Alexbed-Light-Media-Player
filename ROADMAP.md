@@ -26,7 +26,8 @@ Plans can change - open an issue or a discussion if something matters to you.
 - [x] `main.py` split into the `almp/` package; ruff in CI; tests run with real Qt on Linux and Windows
 - [x] Public benchmark (`tools/bench_playlist.py`) with measured numbers in the README
 - [x] Manual Windows test of the built exe (docs/MANUAL-TEST-v8.1.md) on a PC and an offline PC
-- [ ] winget / Scoop submission (drafts in `packaging/`)
+- [x] winget submission: microsoft/winget-pkgs PR #488105 (8.2.8, 2026-11-24)
+- [ ] Scoop submission (draft in `packaging/scoop`)
 
 ## Done (v8.0.1, shipped inside v8.1.0) - safety and reliability
 - [x] Delete warns clearly on drives without a Recycle Bin (USB sticks, memory cards, network drives)

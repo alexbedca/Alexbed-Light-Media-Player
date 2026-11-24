@@ -1,6 +1,8 @@
-# Packaging drafts (not submitted)
+# Packaging
 
-These files are **drafts**. Nothing here has been submitted to winget or Scoop, and nothing in ALMP
+winget: **submitted** for 8.2.8 (microsoft/winget-pkgs PR #488105, multi-file manifests under
+`manifests/a/Alexbed/ALMP/8.2.8` in the fork alexbedca/winget-pkgs). `winget/Alexbed.ALMP.yaml` here is the
+single-file summary of the same data. Scoop: **draft**, not submitted. Nothing in ALMP
 downloads or updates itself: these package managers only help a person (or a helper setting up a PC)
 install the same portable zip that is on the Releases page.
 
