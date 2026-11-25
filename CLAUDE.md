@@ -5,9 +5,11 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.9 released 2026-11-24 (Latest; Settings page readable in Windows light mode: the page in
-  the scroll area had the system palette; found by the Linux port, see ../ALMP-Linux). winget PR #488105 now
-  carries 8.2.9 instead of 8.2.8 (CLA signed, waiting for validation and a moderator).
+- **Status:** v8.2.10 released 2026-11-25 (Latest; seek bar lands where you click: exact seek on release,
+  python-mpv seek() defaults to keyframes; found by the Linux port's real-mouse tests). winget PR #488105 now
+  carries 8.2.10. A Linux port lives in ../ALMP-Linux (local only, not published yet).
+  v8.2.9 released 2026-11-24 ( Settings page readable in Windows light mode: the page in
+  the scroll area had the system palette; found by the Linux port, see ../ALMP-Linux). 
   v8.2.8 released 2026-11-24 (one taskbar button when pinned: no own AppUserModelID;
   full-width punctuation in file names drawn as ASCII by `media.screen_text`, which ended a ~14 s freeze).
   Submitted to winget 2026-11-24 (microsoft/winget-pkgs PR #488105, multi-file manifests from the fork
