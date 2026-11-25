@@ -2,7 +2,7 @@
 
 ## Status (November 2026)
 
-**ALMP releases are not code-signed.** This includes v8.0.0, v8.2.0, v8.2.1, v8.2.2, v8.2.3, v8.2.4, v8.2.5, v8.2.6, v8.2.7, v8.2.8 and v8.2.9.
+**ALMP releases are not code-signed.** This includes v8.0.0, v8.2.0, v8.2.1, v8.2.2, v8.2.3, v8.2.4, v8.2.5, v8.2.6, v8.2.7, v8.2.8, v8.2.9 and v8.2.10.
 
 ALMP applied to the [SignPath Foundation](https://signpath.org) free code-signing programme for
 open-source projects. The application was **declined for now**, because the project does not yet
@@ -21,10 +21,10 @@ listed below.
   In the folder with the zip, open PowerShell and run:
 
   ```powershell
-  Get-FileHash .\ALMP-v8.2.9-Portable.zip -Algorithm SHA256
+  Get-FileHash .\ALMP-v8.2.10-Portable.zip -Algorithm SHA256
   ```
 
-  or, in Command Prompt: `certutil -hashfile ALMP-v8.2.9-Portable.zip SHA256`.
+  or, in Command Prompt: `certutil -hashfile ALMP-v8.2.10-Portable.zip SHA256`.
   The long code must be **exactly** the same as on the release page (capital or small letters do not
   matter). If it is different, delete the file and do not run it.
 - Builds made by GitHub Actions also contain `BUILD-INFO.txt`, which names the source commit and the

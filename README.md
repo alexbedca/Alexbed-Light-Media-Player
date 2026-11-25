@@ -7,7 +7,7 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen](images/screenshot-v8.2-welcome.png)
 
-![ALMP 8.2.9 playing music: several playlist items selected, All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.9-window.png)
+![ALMP 8.2.10 playing music: several playlist items selected, All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.10-window.png)
 
 ![ALMP 8.2 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.2-playing.png)
 
@@ -17,7 +17,11 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.9 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.10 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+
+**New in 8.2.10:** clicking or dragging the seek bar lands where you point. Before, a video jumped to
+the keyframe before that spot, up to several seconds early (6 s in one test). See the
+[release notes](docs/release-notes/v8.2.10.md).
 
 **New in 8.2.9:** the Settings window is readable again when Windows uses **light** mode (its page was
 near-white under ALMP's light text). Dark mode looked right before and is unchanged. See the

@@ -680,3 +680,64 @@ def test_settings_page_uses_the_themed_names(win):
     assert d.findChild(dialogs.QScrollArea, "settingsScroll") is not None
     assert d._page.objectName() == "settingsPage"
     d.close()
+
+# --- 8.2.10: seek bar (found by the Linux port's real-mouse tests) -------------------------------
+
+@qt
+def test_seek_bar_release_is_exact_and_drag_uses_the_dragged_value(win, monkeypatch):  # noqa: F811
+    # python-mpv's seek() defaults to keyframes: a click or drag on the seek bar landed on the keyframe
+    # before the spot (15.75 s instead of 23 s). Dragging may stay fast; letting go must be exact.
+    seeks = []
+    monkeypatch.setattr(type(win), "current_path", property(lambda self: "/m/film.mp4"))
+    monkeypatch.setattr(win.player, "seek", lambda *a, **k: seeks.append((a, k)), raising=False)
+    monkeypatch.setattr(win.player, "idle_active", False, raising=False)
+    win.progress_slider.setMaximum(30)
+    win.progress_slider.setValue(9)
+    win._start_scrubbing()
+    win.progress_slider.sliderMoved.emit(21)            # the drag reports 21 before the value changes
+    win.progress_slider.setValue(23)
+    win._stop_scrubbing()
+    assert seeks[0] == ((21,), {"reference": "absolute", "precision": "keyframes"})
+    assert seeks[-1] == ((23,), {"reference": "absolute", "precision": "exact"})
+    assert not win._is_scrubbing
+
+
+@qt
+@pytest.mark.parametrize("style", ["fusion", "windows"])
+def test_seek_bar_press_beside_the_snapped_handle_still_drags(qapp, style):  # noqa: F811
+    # Whole-second values: on a 30 s track the handle snaps up to ~20 px away from the click. A press
+    # near the start (x=19) left the handle beside the pointer, so no drag began and nothing was seeked.
+    from PyQt6.QtCore import QPointF, Qt
+    from PyQt6.QtGui import QMouseEvent
+    from PyQt6.QtWidgets import QApplication, QStyleFactory
+
+    from almp.widgets import ClickSeekSlider
+    s = ClickSeekSlider(Qt.Orientation.Horizontal)
+    st = QStyleFactory.create(style)
+    if st is None:
+        pytest.skip(f"Qt style {style} not available here")
+    s.setStyle(st)
+    s.setRange(0, 30)
+    s.setValue(1)
+    s.resize(1253, 24)
+    s.show()
+    qapp.processEvents()
+    log = []
+    s.sliderPressed.connect(lambda: log.append("pressed"))
+    s.sliderReleased.connect(lambda: log.append(("released", s.value())))
+
+    def send(kind, x, buttons):
+        btn = Qt.MouseButton.NoButton if kind == QMouseEvent.Type.MouseMove else Qt.MouseButton.LeftButton
+        QApplication.sendEvent(s, QMouseEvent(kind, QPointF(x, 12), s.mapToGlobal(QPointF(x, 12)), btn, buttons,
+                                              Qt.KeyboardModifier.NoModifier))
+        qapp.processEvents()
+    held = Qt.MouseButton.LeftButton
+    for start in (19, 40, 620, 1230):                 # near the start, between seconds, middle, near the end
+        log.clear()
+        send(QMouseEvent.Type.MouseButtonPress, start, held)
+        assert s.isSliderDown(), (style, start)
+        send(QMouseEvent.Type.MouseMove, 940, held)
+        send(QMouseEvent.Type.MouseButtonRelease, 940, Qt.MouseButton.NoButton)
+        assert log[0] == "pressed" and log[-1][0] == "released", (style, start, log)
+        assert 21 <= log[-1][1] <= 24, (style, start, log)
+    s.close()

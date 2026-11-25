@@ -6,8 +6,8 @@ import math
 import os
 import sys
 
-from PyQt6.QtCore import QEvent, QRectF, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient
+from PyQt6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QMouseEvent, QPainter, QPen, QPixmap, QRadialGradient
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -332,6 +332,16 @@ class ClickSeekSlider(QSlider):
                     x = pos.x() - groove.x() - handle.width() // 2
                     self.setValue(QStyle.sliderValueFromPosition(
                         self.minimum(), self.maximum(), max(0, min(span, x)), span, opt.upsideDown))
+                    # The value is whole seconds: on a short track one second is ~40 px, so the handle can
+                    # snap up to ~20 px away from the pointer. Qt then saw a click beside the handle, no
+                    # drag started and nothing was seeked (no sliderPressed/sliderReleased). Hand Qt the
+                    # press at the handle's new centre, so a drag always starts.
+                    self.initStyleOption(opt)
+                    handle = style.subControlRect(QStyle.ComplexControl.CC_Slider, opt,
+                                                  QStyle.SubControl.SC_SliderHandle, self)
+                    if not handle.contains(pos):
+                        event = QMouseEvent(event.type(), QPointF(handle.center()), event.globalPosition(),
+                                            event.button(), event.buttons(), event.modifiers())
         except (AttributeError, RuntimeError, TypeError):
             log.exception("Slider click failed")
         super().mousePressEvent(event)
