@@ -5,10 +5,13 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.8 released 2026-11-24 (Latest; one taskbar button when pinned: no own AppUserModelID;
+- **Status:** v8.2.9 released 2026-11-24 (Latest; Settings page readable in Windows light mode: the page in
+  the scroll area had the system palette; found by the Linux port, see ../ALMP-Linux). winget PR #488105 now
+  carries 8.2.9 instead of 8.2.8 (CLA signed, waiting for validation and a moderator).
+  v8.2.8 released 2026-11-24 (one taskbar button when pinned: no own AppUserModelID;
   full-width punctuation in file names drawn as ASCII by `media.screen_text`, which ended a ~14 s freeze).
   Submitted to winget 2026-11-24 (microsoft/winget-pkgs PR #488105, multi-file manifests from the fork
-  alexbedca/winget-pkgs; needs Alexander's CLA). Listed on the mpv wiki "Applications using mpv".
+  alexbedca/winget-pkgs). Listed on the mpv wiki "Applications using mpv".
   v8.2.7 released 2026-11-17 ( picture sharpening: built-in FSRCNNX in `shaders-builtin/`
   for videos <= 720p, auto switch-off on dropped frames, E key, shader cache in Data; ReplayGain setting, Off by
   default). v8.2.6 released 2026-11-17 (Settings is no longer modal, so the player's buttons work
