@@ -530,7 +530,7 @@ def test_delete_several_selected_files(window, qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(ui.QMessageBox, "critical", lambda *a, **k: errors.append(a))
     _select_rows(window, [0, 2, 3])                              # 0 is playing; 3 will fail
     window.delete_selected_file()
-    assert len(asked) == 1 and asked[0][0] == "Delete 3 Files" and "Recycle Bin" in asked[0][1]
+    assert len(asked) == 1 and asked[0][0] == "Delete 3 Files" and ui.BIN in asked[0][1]
     assert [p for p, _ in sent] == [names[0], names[2], names[3]]
     assert not any(perm for _, perm in sent)                     # all to the Recycle Bin
     assert window.store.paths == [names[1], names[3], names[4]]  # the failed one stays
@@ -732,7 +732,7 @@ def test_own_shaders_mode_uses_the_folder(window, qapp, tmp_path, monkeypatch):
     assert window.settings["enhance"] == "own"
 
 
-def test_replaygain_follows_album_order(window, qapp, tmp_path):
+def test_replaygain_follows_album_order(window, qapp, tmp_path, monkeypatch):
     from almp.store import make_entry
     album = [str(tmp_path / "Album" / f"{i:02} song.flac") for i in range(1, 4)]
     single = str(tmp_path / "Singles" / "hit.mp3")
@@ -748,6 +748,8 @@ def test_replaygain_follows_album_order(window, qapp, tmp_path):
     window.shuffle_checkbox.setChecked(True)
     window.play_index(0)
     assert window.player.props["replaygain"] == "track"      # shuffle: tracks of many albums
+    from almp import ui
+    monkeypatch.setattr(ui, "EXCLUSIVE_AUDIO_SUPPORTED", True)   # Windows behaviour
     window.set_audio_exclusive(True)
     assert window.player.props["replaygain"] == "no"         # bit-perfect stays untouched
     window.set_audio_exclusive(False)

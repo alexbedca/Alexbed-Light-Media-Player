@@ -5,7 +5,8 @@ A simple, free, offline media player for Windows built on mpv (libmpv): big clea
 high-contrast theme, huge playlists (100,000+ files with a streaming scan and virtual list), search, sleep timer,
 media keys, accessibility, TV-size start screen in fullscreen. Portable zip, no installer, no telemetry.
 
-- **Status:** v8.2.10 released 2026-11-25 (Latest; seek bar lands where you click: exact seek on release,
+- **Status:** v8.3.0 in preparation (first release with Linux: Windows zip + Linux tar.gz; nothing changes on
+  Windows). v8.2.10 released 2026-11-25 (Latest; seek bar lands where you click: exact seek on release,
   python-mpv seek() defaults to keyframes; found by the Linux port's real-mouse tests). winget PR #488105 now
   carries 8.2.10. A Linux port lives in ../ALMP-Linux (local only, not published yet).
   v8.2.9 released 2026-11-24 ( Settings page readable in Windows light mode: the page in
@@ -68,6 +69,22 @@ Set-/Remove-ALMP-Defaults.bat  shipped in the zip: default-player registration /
 - `gh` for PRs, releases and CI (`gh run watch`). Work is done on a branch (`release/vX.Y.Z`, `v8.2-tv-mode`, …)
   and merged to `main` through a PR.
 - Claude in Chrome for GitHub web-only settings (social preview).
+
+## Linux version (from 8.3.0)
+One repo, one version: every release carries `ALMP-vX.Y.Z-Portable.zip` (Windows) AND
+`ALMP-vX.Y.Z-Linux-x86_64.tar.gz` (Linux, portable, libmpv bundled in `mpv-libs/`). Details: `docs/LINUX.md`.
+- Linux-only code: `platform_linux.py` (Trash, .desktop entry, default player), `mpris.py` (media keys / desktop
+  media panel), `x11_theme.py` (dark window frame), exclusive-audio options in `player.py`, `bundle_libs.py`.
+  Shared code must stay identical for both systems; every change needs a test (`tests/test_linux_port.py`).
+- Build the tarball on Ubuntu 24.04 (glibc 2.39) with `tools/linux-vm/noble_build_env.sh` (chroot) so it runs on
+  Mint 22 / Ubuntu 24.04 and newer; `Build-ALMP-Linux.sh` does the Nuitka build and bundling.
+- Release checks on Linux: `tools/linux_smoke.py` (28), `tools/linux-vm/built_check.sh` (19) and
+  `tools/linux-vm/mouse_check.py` (12, REAL mouse/keys: xdotool on Xorg, uinput on Wayland, python-xlib XTEST
+  when xdotool is missing) on one Xorg and one Wayland desktop plus a system without mpv. Test like a person
+  (real input) and compare screenshots with Windows (`tools/linux-vm/look_shots.py`).
+- Release rule (Alexander): every release with a Windows build first updates his installed copy (back up the old
+  version without its Data folder, copy the new one over keeping Data, compare files) and runs the built-app checks
+  THERE, before publishing. Never start ALMP.exe from another folder (it re-points the right-click entries).
 
 ## Decisions and gotchas
 - **Never start a copy of the built ALMP.exe outside the installed folder for a test** (e.g. a temp copy):

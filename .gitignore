@@ -39,3 +39,4 @@ Test-Launch.bat
 
 # ALMP data folder when run from source (settings, log)
 Data/
+build-linux.log

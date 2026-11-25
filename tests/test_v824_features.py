@@ -54,7 +54,7 @@ def test_mpv_options_subtitles_gapless_exclusive():
     assert o["sub_visibility"] == "no"
     assert o["gapless_audio"] == "weak" and o["prefetch_playlist"] == "no"
     assert "audio_exclusive" not in o
-    o = player.mpv_options(1, show_subtitles=True, gapless=True, audio_exclusive=True)
+    o = player.mpv_options(1, show_subtitles=True, gapless=True, audio_exclusive=True, platform="win32")
     assert o["sub_visibility"] == "yes"
     assert o["gapless_audio"] == "yes" and o["prefetch_playlist"] == "yes"
     assert o["audio_exclusive"] == "yes"
@@ -548,7 +548,7 @@ def test_gapless_off_by_default_queues_nothing(win):
 @qt
 def test_exclusive_audio_and_upscaling_reach_mpv(win):
     win.set_audio_exclusive(True)
-    assert win.player.props["audio-exclusive"] is True and ("ao-reload",) in win.player.commands
+    assert win.player.props["audio-exclusive"] in (True, "yes") and ("ao-reload",) in win.player.commands
     assert settings.effective_settings(settings.load_settings())["audio_exclusive"] is True
     win._scaler_defaults = {"scale": "lanczos", "deband": False}
     win.set_upscaling("high")

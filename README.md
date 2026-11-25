@@ -17,7 +17,11 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.10 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.3.0 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+
+**New in 8.3.0: ALMP for Linux.** A portable download for Linux Mint 22, Ubuntu 24.04, Debian 13 and newer:
+unpack and run, nothing to install. See [Download and run (Linux)](#download-and-run-linux) and the
+[release notes](docs/release-notes/v8.3.0.md). Nothing changes on Windows.
 
 **New in 8.2.10:** clicking or dragging the seek bar lands where you point. Before, a video jumped to
 the keyframe before that spot, up to several seconds early (6 s in one test). See the
@@ -130,8 +134,8 @@ and it is not a commercial product.
 > Only download ALMP from this repository's [Releases](../../releases) page. Then click **More info** and **Run anyway**.
 >
 > **Check your download first (recommended).** Each release page lists the zip's SHA-256 checksum. In the Downloads folder,
-> open PowerShell and run `Get-FileHash .\ALMP-v8.2.8-Portable.zip -Algorithm SHA256`
-> (or in Command Prompt: `certutil -hashfile ALMP-v8.2.8-Portable.zip SHA256`).
+> open PowerShell and run `Get-FileHash .\ALMP-v8.3.0-Portable.zip -Algorithm SHA256`
+> (or in Command Prompt: `certutil -hashfile ALMP-v8.3.0-Portable.zip SHA256`).
 > The long code it prints must match the release page exactly (capital or small letters do not matter). If it does not match,
 > do not run the file. See [SIGNING.md](SIGNING.md) for why ALMP is not signed yet.
 
@@ -149,6 +153,32 @@ Windows does not allow any program to change your defaults silently, so this las
 Run `Remove-ALMP-Defaults.bat`. It removes ALMP from *Open with* and *Default apps*, the "Play with ALMP" /
 "Add to ALMP playlist" right-click entries, turns off *Run at Startup*,
 and asks whether to delete ALMP's settings and log files too. Then delete the ALMP folder.
+
+## Download and run (Linux)
+
+ALMP for Linux is **portable, like the Windows zip: nothing to install.** The playback engine (mpv with
+its FFmpeg libraries) is inside the folder.
+
+1. Download `ALMP-vX.Y.Z-Linux-x86_64.tar.gz` from the [Releases](../../releases) page.
+2. Right-click it > *Extract Here* (or `tar xzf ALMP-vX.Y.Z-Linux-x86_64.tar.gz`).
+3. Open the new folder and double-click `ALMP` (or run `./ALMP-vX.Y.Z-Linux-x86_64/ALMP`).
+
+Check the download first: `sha256sum -c ALMP-vX.Y.Z-Linux-x86_64.tar.gz.sha256.txt` must print `OK`.
+
+- **Runs on** 64-bit PCs with Linux Mint 22, Ubuntu 24.04, Debian 13 and newer (glibc 2.39 or later:
+  `ldd --version`). Older systems (Ubuntu 22.04, Debian 12) are not supported by this build.
+- **Uses from your system** (every desktop Linux has them): the graphics driver, PipeWire or PulseAudio,
+  D-Bus, fonts, GLib. On a Wayland desktop ALMP runs through XWayland so the video stays inside its window.
+- **In Settings > Linux:** add ALMP to the app menu and "Open With", make it the default player (60 audio
+  and video types), start at sign-in, and background media keys (MPRIS: keyboard media keys and the desktop's
+  media controls). *Exclusive audio* sends the sound straight to a device (for example HDMI to a TV or
+  receiver), bit-perfect, or through PipeWire in exclusive mode.
+- **Tested** on Debian 13 (GNOME, Xorg and Wayland), Ubuntu 26.04 (GNOME Wayland, without any mpv installed)
+  and Linux Mint 22.3 (Cinnamon) on a real PC, with real mouse/keyboard input. See [docs/LINUX.md](docs/LINUX.md).
+- **Not tested:** KDE, Xfce, Fedora, Arch, HiDPI screens, NVIDIA/AMD graphics, real USB sticks (Trash),
+  drag and drop of files.
+- **Differences from Windows:** the window frame is drawn by your desktop (dark on Cinnamon; GNOME keeps its
+  own); no right-click entries in the file manager (use "Open With"); files go to your desktop's Trash.
 
 ## Keyboard shortcuts
 
@@ -243,7 +273,9 @@ The code is in the `almp/` package (`main.py` only starts it): plain logic that 
 options, Windows-only calls (`platform_win.py`, `smtc.py`, every call guarded) and the window (`ui.py`).
 
 - **Windows:** put `mpv-2.dll` (a libmpv build) in a folder named `runtime` next to `main.py`.
-- **Linux (experimental, tested on Ubuntu under WSL only):** `sudo apt install libmpv2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xkb1`. ALMP uses X11 on Linux because mpv embeds into the window that way.
+- **Linux:** `sudo apt install libmpv2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xkb1`
+  (only for running from source; the release tarball brings its own). ALMP uses X11 (XWayland on Wayland)
+  because mpv embeds into the window that way. Building the Linux tarball: see [docs/LINUX.md](docs/LINUX.md).
 
 ### Build the portable app
 

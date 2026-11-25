@@ -1,0 +1,36 @@
+#cloud-config
+# Ubuntu 26.04 desktop, unattended (ALMP Linux port test VM). Put at the root of the install disc as
+# /autoinstall.yaml and add "autoinstall" to the kernel line (see make_ubuntu_iso.sh).
+# User "almp" has a LOCKED password (nobody typed or chose one): log in with the SSH key only;
+# GDM logs in automatically. @SSH_PUBLIC_KEY@ is replaced by make_ubuntu_iso.sh.
+autoinstall:
+  version: 1
+  interactive-sections: []
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  timezone: Etc/UTC
+  storage:
+    layout:
+      name: direct
+  ssh:
+    install-server: true
+    allow-pw: false
+  codecs:
+    install: false
+  drivers:
+    install: false
+  updates: security
+  user-data:
+    users:
+      - name: almp
+        gecos: ALMP test
+        groups: [adm, sudo, audio, video, plugdev]
+        shell: /bin/bash
+        lock_passwd: true
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        ssh_authorized_keys:
+          - "@SSH_PUBLIC_KEY@"
+  late-commands:
+    - "printf '[daemon]\\nAutomaticLoginEnable=true\\nAutomaticLogin=almp\\n' > /target/etc/gdm3/custom.conf"
+  shutdown: poweroff

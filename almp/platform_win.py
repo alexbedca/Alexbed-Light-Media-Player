@@ -13,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import platform_linux
 from .logsetup import log
 from .media import AUDIO_EXTENSIONS, PLAYLIST_EXTENSIONS, VIDEO_EXTENSIONS
 from .paths import get_settings_dir
@@ -39,6 +40,11 @@ FOF_ALLOWUNDO = 0x0040
 FOF_WANTNUKEWARNING = 0x4000
 
 DELETE_OK, DELETE_CANCELLED, DELETE_FAILED = "ok", "cancelled", "failed"
+
+
+def bin_name(platform=None):
+    """What the user calls the place deleted files go: 'Recycle Bin' on Windows, 'Trash' on Linux."""
+    return "Trash" if platform_linux.is_linux(platform) else "Recycle Bin"
 
 
 def drive_root(path):
@@ -70,6 +76,8 @@ def recycle_bin_available(path, platform=None, drive_type_func=None):
     Everything else (USB stick, card reader, network, CD, RAM disk, unknown, not Windows) is treated
     as 'no Recycle Bin' so the user is warned before anything is deleted for good."""
     platform = sys.platform if platform is None else platform
+    if platform_linux.is_linux(platform):
+        return platform_linux.trash_available(path, platform)   # Linux: the freedesktop.org Trash
     if platform != "win32":
         return False
     drive_type_func = drive_type_func or get_drive_type
@@ -89,6 +97,8 @@ def send_to_recycle_bin(file_path, permanent=False, hwnd=0):
     permanent delete: if the Recycle Bin call fails, the file is left alone."""
     if sys.platform != "win32":
         if not permanent:
+            if platform_linux.is_linux():
+                return platform_linux.move_to_trash(file_path)
             return DELETE_FAILED              # no Recycle Bin support here: the caller must ask first
         try:
             os.remove(file_path)

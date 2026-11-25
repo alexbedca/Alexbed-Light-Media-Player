@@ -11,8 +11,39 @@ import sys
 
 from .logsetup import log
 
+
+def bundled_libmpv(base=None, platform=None):
+    """Linux portable build: libmpv in the mpv-libs folder next to ALMP (nothing to install), or None
+    (run from source: the system's libmpv2 is used)."""
+    platform = sys.platform if platform is None else platform
+    if not platform.startswith("linux"):
+        return None
+    if base is None:
+        from .paths import app_dir
+        base = app_dir()
+    path = os.path.join(str(base), "mpv-libs", "libmpv.so.2")
+    return path if os.path.isfile(path) else None
+
+
+def _import_mpv(path=None):
+    """import mpv. python-mpv looks for libmpv with ctypes.util.find_library("mpv"), which only knows
+    installed libraries, so point it at the bundled copy while it loads."""
+    if path is None:
+        import mpv as module
+        return module
+    import ctypes.util
+    original = ctypes.util.find_library
+    ctypes.util.find_library = lambda name: path if name == "mpv" else original(name)
+    try:
+        import mpv as module
+    finally:
+        ctypes.util.find_library = original
+    return module
+
+
+MPV_LIBRARY = bundled_libmpv() or "system"
 try:
-    import mpv
+    mpv = _import_mpv(None if MPV_LIBRARY == "system" else MPV_LIBRARY)
     MPV_IMPORT_ERROR = None
 except Exception as _mpv_exc:          # noqa: BLE001 - mpv-2.dll missing, blocked by antivirus, or wrong build
     mpv = None
@@ -39,7 +70,8 @@ UPSCALING_PROPERTIES = {
 
 
 def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=None, proc_version=None,
-                show_subtitles=False, gapless=False, audio_exclusive=False, shader_cache_dir=None):
+                show_subtitles=False, gapless=False, audio_exclusive=False, shader_cache_dir=None,
+                audio_device=None):
     """The options ALMP starts mpv with. Pure: easy to check in tests.
     The volume normaliser and the subtitle box are switched on after start (set_audio_filter,
     subtitle_background_options), so an mpv build without them can never stop playback from starting."""
@@ -72,9 +104,13 @@ def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=Non
         # Prepared shaders are kept here, so FSRCNNX takes ~3 s to prepare only the first time
         # (measured on a GTX 960: 3.2 s first run, 1.2 s after). In ALMP's own Data folder: portable.
         opts["gpu_shader_cache_dir"] = str(shader_cache_dir)
-    if audio_exclusive:
-        opts["audio_exclusive"] = "yes"
+    if audio_exclusive and (platform == "win32" or platform.startswith("linux")):
+        opts.update(exclusive_audio_options(True, audio_device, platform))
     if platform.startswith("linux"):
+        # mpv's own X11 window inside ALMP's video area must not take the mouse: with pointer events
+        # selected there, X sends every move/click to mpv and ALMP never sees them (found on the real
+        # Mint PC: moving the mouse in fullscreen did not bring the controls back). ALMP handles the mouse.
+        opts["input_cursor"] = "no"
         forced_vo = environ.get("ALMP_VO")
         if forced_vo:
             opts["vo"] = forced_vo
@@ -87,7 +123,66 @@ def mpv_options(wid, boost=False, subtitle_scale=1.0, platform=None, environ=Non
                     proc_version = ""
             if "microsoft" in proc_version.lower():
                 opts.update(vo="x11", hwdec="no", profile="fast", vd_lavc_fast=True)
+            elif environ.get("WAYLAND_DISPLAY") and environ.get("QT_QPA_PLATFORM", "").startswith("xcb"):
+                # Wayland desktop: ALMP's window is an X11 window (XWayland, see app.py), but mpv
+                # would pick its Wayland output and open a second window of its own. Keep it on X11
+                # so the video is drawn inside ALMP (found on GNOME Wayland, Debian 13).
+                # One name only: mpv 0.37 (bundled) rejects lists like "x11egl," and Debian's mpv 0.40 has no
+                # GLX "x11". If a build rejects it anyway, start_mpv starts without it.
+                opts["gpu_context"] = "x11egl"
     return opts
+
+
+def start_mpv(factory, opts):
+    """mpv.MPV(**opts). If this mpv build does not know the X11 output named in gpu_context,
+    start again without it: playback must never fail because of that hint."""
+    try:
+        return factory(**opts)
+    except ValueError as e:
+        if "gpu_context" not in opts or "gpu-context" not in repr(e.args):
+            raise
+        log.warning("mpv does not accept gpu-context=%s; starting without it", opts["gpu_context"])
+        return factory(**{k: v for k, v in opts.items() if k != "gpu_context"})
+
+
+# Linux: devices ALMP can send the sound to directly (no PipeWire/PulseAudio mixing), from mpv's
+# audio-device-list. hdmi:/front:/hw:/iec958: are the card itself without ALSA's conversion plug-ins.
+EXCLUSIVE_DEVICE_PREFIXES = ("alsa/hdmi:", "alsa/front:", "alsa/hw:", "alsa/iec958:")
+
+
+def exclusive_devices(device_list):
+    """[(name, description)] of the direct devices in mpv's audio-device-list."""
+    out = []
+    for d in device_list or []:
+        name = str(d.get("name", ""))
+        if name.startswith(EXCLUSIVE_DEVICE_PREFIXES):
+            out.append((name, str(d.get("description") or name)))
+    return out
+
+
+def exclusive_audio_options(on, device, platform=None):
+    """mpv options for "Exclusive audio". Windows: WASAPI exclusive. Linux: straight to a chosen ALSA
+    device (bit-perfect, PipeWire bypassed), or with no device chosen PipeWire's exclusive mode (mpv's
+    ao_pipewire marks ALMP's stream exclusive; checked with mpv 0.37: node.exclusive = true)."""
+    platform = sys.platform if platform is None else platform
+    if platform == "win32":
+        return {"audio_exclusive": "yes" if on else "no"}
+    if not on:
+        return {"audio_exclusive": "no", "audio_device": "auto"}
+    if device:
+        return {"audio_exclusive": "no", "audio_device": device}
+    return {"audio_exclusive": "yes", "audio_device": "auto"}
+
+
+def audio_output_failed(player):
+    """True when a file with sound plays but mpv has no audio output (e.g. the chosen device is busy)."""
+    try:
+        if getattr(player, "current_ao", None):
+            return False
+        tracks = getattr(player, "track_list", None) or []
+        return any(t.get("type") == "audio" and t.get("selected") for t in tracks)
+    except Exception:          # noqa: BLE001
+        return False
 
 
 def gapless_options(on):

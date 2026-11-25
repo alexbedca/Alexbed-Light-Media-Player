@@ -7,6 +7,7 @@ never saved, Delete never deletes without a clear question, nothing connects to 
 import bisect
 import os
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
@@ -59,6 +60,7 @@ from PyQt6.QtWidgets import (
 )
 
 from . import APP_TITLE, __version__
+from . import platform_linux as pl
 from . import platform_win as pw
 from .dialogs import AboutDialog, HelpDialog, SettingsDialog, describe_engine
 from .logic import (
@@ -100,11 +102,14 @@ from .media import (
     PLAYLIST_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
     VIDEO_EXTENSIONS,
+    audio_tags,
+    display_title,
     file_ext,
     is_audio_path,
     screen_text,
     write_playlist_file,
 )
+from .mpris import LinuxMediaControls
 from .naturalsort import natural_name_key, natural_path_key
 from .paths import app_dir, get_app_icon_path, get_resource_path, get_settings_dir, is_compiled
 from .player import (
@@ -119,6 +124,8 @@ from .player import (
     apply_user_shaders,
     audio_format_text,
     enhance_shaders,
+    exclusive_audio_options,
+    exclusive_devices,
     find_user_shaders,
     gapless_options,
     get_mpv_end_reason,
@@ -128,6 +135,7 @@ from .player import (
     replaygain_mode,
     set_audio_filter,
     set_prop,
+    start_mpv,
     subtitle_background_options,
     too_many_dropped_frames,
     upscaling_properties,
@@ -152,6 +160,9 @@ from .theme import ICON_ON_ACCENT, accent, icon_color, make_icon, stylesheet
 from .widgets import ClickSeekSlider, CustomConfirmDialog, FullscreenTitlePill, PlaylistView, WelcomeScreen, logo_pixmap
 
 APP_EXE_PATH = pw.resolve_app_exe_path()
+BIN = pw.bin_name()          # 'Recycle Bin' on Windows, 'Trash' on Linux
+# Windows: WASAPI exclusive. Linux: straight to a chosen ALSA device, or PipeWire's exclusive mode.
+EXCLUSIVE_AUDIO_SUPPORTED = sys.platform == "win32" or sys.platform.startswith("linux")
 LINUX_AUTOSTART_DIR = Path.home() / ".config" / "autostart"
 LINUX_DESKTOP_FILE = LINUX_AUTOSTART_DIR / "almp.desktop"
 CHUNK_ROWS = 5000            # rows added to the list per event-loop turn (about 5-15 ms of work)
@@ -160,6 +171,7 @@ ICON_PX = 18
 
 class _Bridge(QObject):
     end_file = pyqtSignal(str)
+    audio_device_failed = pyqtSignal()          # Linux: mpv could not open the chosen sound device
     startup_done = pyqtSignal(bool, str)
     sorted_ready = pyqtSignal(object, int, str)
 
@@ -273,6 +285,12 @@ class MediaWindow(QMainWindow):
         self.hide_timer = QTimer(self)
         self.hide_timer.setInterval(3000)
         self.hide_timer.timeout.connect(self._hide_fullscreen_overlays)
+        # Linux: also watch the pointer position in fullscreen, in case a video output still takes the
+        # mouse events (see player.mpv_options input_cursor); a move then brings the controls back.
+        self._fs_cursor_timer = QTimer(self)
+        self._fs_cursor_timer.setInterval(200)
+        self._fs_cursor_timer.timeout.connect(self._poll_fs_cursor)
+        self._fs_cursor_last = None
 
         self._filter_timer = QTimer(self)
         self._filter_timer.setSingleShot(True)
@@ -523,10 +541,11 @@ class MediaWindow(QMainWindow):
 
     # ------------------------------------------------------------------ Windows media controls
     def _start_media_controls(self):
-        if self._closing or sys.platform != "win32":
+        linux = sys.platform.startswith("linux")
+        if self._closing or not (sys.platform == "win32" or linux):
             self._media_controls_note = "Media keys work while ALMP is the active window."
             return
-        if previous_start_crashed():
+        if not linux and previous_start_crashed():
             log.warning("The Windows media controls did not finish starting last time; switched off")
             self.settings["media_controls"] = False
             update_settings(media_controls=False)
@@ -536,17 +555,33 @@ class MediaWindow(QMainWindow):
             if not self._media_controls_note:
                 self._media_controls_note = "Off: media keys work while ALMP is the active window."
             return
-        mc = WindowsMediaControls(self)
+        if linux:
+            mc = LinuxMediaControls(self, volume_get=self._mpris_volume, volume_set=self._set_mpris_volume,
+                                    position_get=self._mpris_position)
+            mc.raise_requested.connect(self._bring_to_front)
+            on_note = "On: media keys and the desktop's media controls (MPRIS) control ALMP."
+        else:
+            mc = WindowsMediaControls(self)
+            on_note = "On: media keys and the Windows volume pop-up control ALMP."
         if mc.start(int(self.winId())):
             mc.command.connect(lambda c: self.media_command(c, "smtc"))
             self.media_controls = mc
-            self._media_controls_note = "On: media keys and the Windows volume pop-up control ALMP."
+            self._media_controls_note = on_note
             self._update_media_controls()
             if self.current_path:
                 mc.set_status("playing" if self._is_playing() else "paused")
         else:
             self._media_controls_note = ("Not available on this PC: media keys work while ALMP is the "
                                          "active window (details in almp.log).")
+
+    def _mpris_volume(self):
+        return self.volume_slider.value() / 100.0
+
+    def _set_mpris_volume(self, value):
+        self.volume_slider.setValue(round(min(value, self.volume_slider.maximum() / 100.0) * 100))
+
+    def _mpris_position(self):
+        return (getattr(self.player, "time_pos", 0) or 0) if self.player and self.current_path else 0
 
     def media_controls_status_text(self):
         return self._media_controls_note or "Media keys work while ALMP is the active window."
@@ -573,7 +608,39 @@ class MediaWindow(QMainWindow):
             mc.set_status("stopped")
             mc.clear_track()
             return
-        mc.set_track(Path(path).stem, video=not is_audio_path(path))
+        audio = is_audio_path(path)
+        if isinstance(mc, LinuxMediaControls):
+            # Linux desktops also show artist and a picture (Cinnamon's sound applet, GNOME's panel).
+            # The song's own title/artist/album tags when it has them (the file name otherwise).
+            if getattr(self, "_mpris_info_path", None) != path:
+                self._mpris_info_path = path
+                self._mpris_info = (audio_tags(path) if audio else {}, self._mpris_art_url(path, audio))
+            tags, art_url = self._mpris_info
+            mc.set_track(tags.get("title") or display_title(path), video=not audio, artist=tags.get("artist"),
+                         art_url=art_url, album=tags.get("album"))
+        else:
+            mc.set_track(display_title(path), video=not audio)
+
+    def _mpris_art_url(self, path, audio):
+        """file:// URL of the playing track's album art (saved as a PNG in the user's runtime folder,
+        which lives in memory and is emptied at log-out), else of ALMP's icon."""
+        old = getattr(self, "_mpris_art_file", None)
+        if old:
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+            self._mpris_art_file = None
+        pixmap = self._load_album_art(path) if audio else None
+        if pixmap is not None and not pixmap.isNull():
+            folder = os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+            target = os.path.join(folder, f"almp-cover-{os.getpid()}-{abs(hash(path)) % 10**8}.png")
+            if pixmap.scaled(512, 512, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation).save(target, "PNG"):
+                self._mpris_art_file = target
+                return QUrl.fromLocalFile(target).toString()
+        icon = get_app_icon_path()
+        return QUrl.fromLocalFile(icon).toString() if icon else None
 
     # ------------------------------------------------------------------ help / about / settings
     def show_help(self):
@@ -648,7 +715,31 @@ class MediaWindow(QMainWindow):
     def folder_verb_installed(self):
         return pw.folder_verb_installed()
 
+    # Linux port: app-menu entry and default player through a .desktop file (platform_linux.py)
+    def can_register_with_desktop(self):
+        return pl.can_register(APP_EXE_PATH)
+
+    def desktop_entry_installed(self):
+        return pl.desktop_entry_installed()
+
+    def set_desktop_entry(self, on):
+        if on:
+            ok, details = pl.install_desktop_entry(APP_EXE_PATH, icon=get_app_icon_path())
+        else:
+            ok, details = pl.remove_desktop_entry()
+        if ok:
+            self._status("ALMP is now in the app menu and in Open With." if on
+                         else "ALMP was removed from the app menu.")
+        else:
+            self._status("Could not change the app menu entry: " + details)
+        return ok
+
     def make_default_player(self):
+        if sys.platform.startswith("linux"):
+            ok, details = pl.install_desktop_entry(APP_EXE_PATH, icon=get_app_icon_path(), make_default=True)
+            self._status("ALMP is now the default player for audio and video files." if ok
+                         else "Could not make ALMP the default player: " + details)
+            return
         ok, details = pw.register_default_player(APP_EXE_PATH)
         if not ok:
             with self._modal():
@@ -728,10 +819,16 @@ class MediaWindow(QMainWindow):
         self._status("Gapless playback is on: the next track is read ahead." if on else "Gapless playback is off.")
 
     def set_audio_exclusive(self, on):
-        """Settings > Exclusive audio (WASAPI exclusive mode; default off, remembered)."""
+        """Settings > Exclusive audio (default off, remembered). Windows: WASAPI exclusive mode. Linux:
+        straight to the chosen device, or PipeWire's exclusive mode when no device is chosen."""
         self.settings["audio_exclusive"] = bool(on)
         update_settings(audio_exclusive=bool(on))
-        if set_prop(self.player, "audio-exclusive", bool(on)) and self.player is not None:
+        self._exclusive_fallback = False
+        if sys.platform == "win32":
+            changed = set_prop(self.player, "audio-exclusive", bool(on))
+        else:
+            changed = self._apply_exclusive_options()
+        if changed and self.player is not None:
             try:
                 self.player.command("ao-reload")           # takes effect at once, not only at the next track
             except Exception:          # noqa: BLE001
@@ -740,6 +837,60 @@ class MediaWindow(QMainWindow):
             self._apply_replaygain(self.current_path)       # Automatic ReplayGain is off when bit-perfect
         self._status("Exclusive audio is on: other programs are silent while ALMP plays." if on
                      else "Exclusive audio is off.")
+
+    # Linux: which device "Exclusive audio" uses ("" = through PipeWire, exclusive)
+    def _apply_exclusive_options(self):
+        ok = True
+        opts = exclusive_audio_options(self.settings["audio_exclusive"],
+                                       self.settings.get("audio_exclusive_device", ""), sys.platform)
+        for key, value in opts.items():
+            ok = set_prop(self.player, key.replace("_", "-"), value) and ok
+        return ok
+
+    def exclusive_device_choices(self):
+        """[(name, description)] of the direct devices mpv sees now (Settings > Exclusive audio > Output)."""
+        try:
+            return exclusive_devices(getattr(self.player, "audio_device_list", None) or [])
+        except Exception:          # noqa: BLE001
+            return []
+
+    def set_exclusive_device(self, name):
+        name = name if isinstance(name, str) and name.startswith("alsa/") else ""
+        self.settings["audio_exclusive_device"] = name
+        update_settings(audio_exclusive_device=name)
+        self._exclusive_fallback = False
+        if self.settings["audio_exclusive"] and self.player is not None and self._apply_exclusive_options():
+            try:
+                self.player.command("ao-reload")
+            except Exception:          # noqa: BLE001
+                log.debug("ao-reload refused", exc_info=True)
+
+    def _mpv_log(self, level, component, message):
+        """mpv's error messages (Linux; mpv thread). Only the "no sound device" one is acted on."""
+        if "audio device" in str(message) and "no sound" in str(message):
+            self._bridge.audio_device_failed.emit()
+
+    def _check_exclusive_output(self):
+        """If the chosen device could not be opened (busy: another program or PipeWire is using it, or it
+        cannot play this format), play through PipeWire (exclusive) instead and say so."""
+        if (not sys.platform.startswith("linux") or not self.settings["audio_exclusive"]
+                or not self.settings.get("audio_exclusive_device") or self.player is None
+                or getattr(self, "_exclusive_fallback", False)):
+            return
+        log.warning("Exclusive audio: %s could not be opened; using PipeWire (exclusive)",
+                    self.settings["audio_exclusive_device"])
+        self._exclusive_fallback = True
+        for key, value in exclusive_audio_options(True, "", sys.platform).items():
+            set_prop(self.player, key.replace("_", "-"), value)
+        try:
+            self.player.command("ao-reload")
+            set_prop(self.player, "aid", "auto")          # a video went on without sound: give it back
+        except Exception:          # noqa: BLE001
+            log.debug("ao-reload refused", exc_info=True)
+        # A music file ends at once without a sound device: play the same track again, do not skip it.
+        self._audio_fallback_replay = self.current_path
+        self._status("The chosen sound device is busy or cannot play this file: ALMP plays through "
+                     "the normal output (PipeWire, exclusive) for now.", announce=True)
 
     def set_upscaling(self, level):
         """Settings > Video upscaling: Standard / Sharp / High quality (mpv's built-in scalers only)."""
@@ -892,7 +1043,7 @@ class MediaWindow(QMainWindow):
         if 0 <= i < len(paths) and paths[i] == path:
             neighbours = [paths[i - 1] if i > 0 else None, paths[i + 1] if i + 1 < len(paths) else None]
         mode = replaygain_mode(self.settings["replaygain"], path, neighbours, self.shuffle_enabled,
-                               self.settings["audio_exclusive"])
+                               self.settings["audio_exclusive"] and EXCLUSIVE_AUDIO_SUPPORTED)
         set_prop(self.player, "replaygain", mode)
         return mode
 
@@ -2079,12 +2230,16 @@ class MediaWindow(QMainWindow):
         try:
             self.player_events = self._bridge
             self._bridge.end_file.connect(self._handle_end_file)
+            self._bridge.audio_device_failed.connect(self._check_exclusive_output)
             s = self.settings
-            self.player = mpv.MPV(**mpv_options(self.video.winId(), boost=s["volume_boost"],
-                                                subtitle_scale=s["subtitle_scale"],
-                                                show_subtitles=s["show_subtitles"], gapless=s["gapless"],
-                                                audio_exclusive=s["audio_exclusive"],
-                                                shader_cache_dir=os.path.join(get_settings_dir(), "shader-cache")))
+            opts = mpv_options(
+                self.video.winId(), boost=s["volume_boost"], subtitle_scale=s["subtitle_scale"],
+                show_subtitles=s["show_subtitles"], gapless=s["gapless"], audio_exclusive=s["audio_exclusive"],
+                shader_cache_dir=os.path.join(get_settings_dir(), "shader-cache"),
+                audio_device=s.get("audio_exclusive_device", ""))
+            if sys.platform.startswith("linux"):
+                opts.update(log_handler=self._mpv_log, loglevel="error")   # notices a busy sound device
+            self.player = start_mpv(mpv.MPV, opts)
             self.player.volume = self.volume_slider.value()
             for k in SCALER_KEYS:                       # "Standard" = what mpv uses on its own
                 try:
@@ -2582,18 +2737,18 @@ class MediaWindow(QMainWindow):
         name = screen_text(Path(path).name)
         if has_bin:
             title = "Delete File"
-            message = f"Send this file to the Recycle Bin?\n\n{name}\n\nYou can restore it from the Recycle Bin later."
+            message = f"Send this file to the {BIN}?\n\n{name}\n\nYou can restore it from the {BIN} later."
         else:
             title = "Delete File Permanently?"
             message = (
-                "This drive has no Recycle Bin (for example a USB stick, memory card or network drive).\n\n"
+                f"This drive has no {BIN} (for example a USB stick, memory card or network drive).\n\n"
                 f"The file will be deleted PERMANENTLY and cannot be restored:\n\n{name}\n\n"
                 "Delete it anyway?"
             )
         with self._modal():
             # Stay in fullscreen: the dialog is always-on-top, and the controls and cursor stay visible.
             dialog = CustomConfirmDialog(self, title, message,
-                                         yes_text="Yes, delete" if not has_bin else "Yes, to Recycle Bin")
+                                         yes_text="Yes, delete" if not has_bin else f"Yes, to {BIN}")
             dialog.setModal(True)
             reply = dialog.exec()
             dialog.deleteLater()
@@ -2652,7 +2807,7 @@ class MediaWindow(QMainWindow):
         if path in self.queue:
             self.queue.remove(path)
         self._update_playlist_count()
-        self._status(f"File sent to Recycle Bin: {name}" if has_bin else f"File deleted permanently: {name}", announce=True)
+        self._status(f"File sent to {BIN}: {name}" if has_bin else f"File deleted permanently: {name}", announce=True)
         if is_currently_playing:
             self._after_current_removed(src)
         elif was_playing and self.player:
@@ -2691,9 +2846,9 @@ class MediaWindow(QMainWindow):
             names += f"\n... and {n - 5} more"
         if not no_bin:
             title = f"Delete {n} Files"
-            message = (f"Send these {n} files to the Recycle Bin?\n\n{names}\n\n"
-                       "You can restore them from the Recycle Bin later.")
-            yes_text = "Yes, to Recycle Bin"
+            message = (f"Send these {n} files to the {BIN}?\n\n{names}\n\n"
+                       f"You can restore them from the {BIN} later.")
+            yes_text = f"Yes, to {BIN}"
         else:
             if len(no_bin) == n:
                 title = f"Delete {n} Files Permanently?"
@@ -2702,8 +2857,8 @@ class MediaWindow(QMainWindow):
             else:
                 title = f"Delete {n} Files?"
                 which = f"{len(no_bin)} of these {n} files are"
-                rest = " The others go to the Recycle Bin."
-            message = (f"{which} on a drive with no Recycle Bin (for example a USB stick, memory card or "
+                rest = f" The others go to the {BIN}."
+            message = (f"{which} on a drive with no {BIN} (for example a USB stick, memory card or "
                        f"network drive). They will be deleted PERMANENTLY and cannot be restored.{rest}"
                        f"\n\n{names}\n\nDelete them anyway?")
             yes_text = "Yes, delete"
@@ -2769,7 +2924,7 @@ class MediaWindow(QMainWindow):
         recycled = sum(1 for p in deleted if p not in no_bin)
         parts = []
         if recycled:
-            parts.append(f"{recycled} sent to the Recycle Bin")
+            parts.append(f"{recycled} sent to the {BIN}")
         if len(deleted) - recycled:
             parts.append(f"{len(deleted) - recycled} deleted permanently")
         if cancelled:
@@ -2922,6 +3077,16 @@ class MediaWindow(QMainWindow):
             self._layout_overlay()
             QTimer.singleShot(0, self._layout_fs_title)
 
+    def _poll_fs_cursor(self):
+        if not self._is_fullscreen:
+            self._fs_cursor_timer.stop()
+            self._fs_cursor_last = None
+            return
+        pos = QCursor.pos()
+        if self._fs_cursor_last is not None and pos != self._fs_cursor_last:
+            self._on_fs_activity()
+        self._fs_cursor_last = pos
+
     def _on_fs_activity(self):
         self._show_cursor()
         self._show_fs_overlays()
@@ -3050,6 +3215,9 @@ class MediaWindow(QMainWindow):
             if not self.welcome_widget.isVisible():
                 self._hide_cursor()
             self.hide_timer.start()
+            if sys.platform.startswith("linux"):
+                self._fs_cursor_last = None
+                self._fs_cursor_timer.start()
         self._update_fs_button()
         self._apply_tv_mode()
         QTimer.singleShot(0, self._layout_overlay)
@@ -3494,6 +3662,10 @@ class MediaWindow(QMainWindow):
     def _handle_end_file(self, reason):
         if self._closing:
             return
+        replay, self._audio_fallback_replay = getattr(self, "_audio_fallback_replay", None), None
+        if replay and replay == self.current_path and 0 <= self.current_index < len(self.store):
+            self.play_index(self.current_index)        # same track again, now through PipeWire
+            return
         if str(reason).upper() != "EOF" or not self._gapless_next:
             self._handle_end_file_inner(reason)
             return
@@ -3659,6 +3831,11 @@ class MediaWindow(QMainWindow):
         self.stop_background_work()
         if self.media_controls is not None:
             self.media_controls.stop()
+        if getattr(self, "_mpris_art_file", None):
+            try:
+                os.remove(self._mpris_art_file)          # the cover picture shown by the desktop's panel
+            except OSError:
+                pass
         if self.player:
             try:
                 self.player.terminate()
