@@ -2835,13 +2835,19 @@ class MediaWindow(QMainWindow):
     def _fmt_time(seconds):
         return fmt_time(seconds)
 
-    def slider_user_scrubbed(self):
+    def slider_user_scrubbed(self, value=None, exact=False):
+        """Seek bar: while dragging, fast keyframe seeks to the value the drag reports (sliderMoved sends
+        it before the slider's own value changes); when the button is let go (also after a plain click),
+        one EXACT seek. python-mpv's seek() defaults to keyframes, so without "exact" a click or drag
+        landed on the keyframe before the spot: 15.75 s instead of 23 s in the test video (found on Linux;
+        the same code runs on Windows)."""
         if not self.player or not self.current_path:
             return
         try:
             if self.player.idle_active:
                 return
-            self.player.seek(self.progress_slider.value(), reference="absolute")
+            target = self.progress_slider.value() if value is None else value
+            self.player.seek(target, reference="absolute", precision="exact" if exact else "keyframes")
         except Exception:          # noqa: BLE001
             log.debug("Seek ignored", exc_info=True)
 
@@ -2850,7 +2856,7 @@ class MediaWindow(QMainWindow):
 
     def _stop_scrubbing(self):
         self._is_scrubbing = False
-        self.slider_user_scrubbed()
+        self.slider_user_scrubbed(exact=True)
 
     def mouseMoveEvent(self, event):
         if self._is_fullscreen:

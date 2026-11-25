@@ -132,6 +132,11 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
 
+## 16. New in 8.2.10
+- [ ] Pause a long video, click the seek bar at a few spots and drag the handle: the time shown is the spot
+      you pointed at (within about 1 s), not several seconds earlier.
+- [ ] Same on a short song (under 1 minute).
+
 ## 15. New in 8.2.9
 - [ ] Windows Settings > Personalisation > Colours > Light, open ALMP > Settings: dark page, all headings
       and texts readable. Back to Dark: same look as before.
