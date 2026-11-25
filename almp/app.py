@@ -23,6 +23,7 @@ from .logsetup import (
 )
 from .paths import (
     SOURCE_ROOT,
+    app_dir,
     get_app_icon_path,
     init_data_dir,
     is_compiled,
@@ -32,8 +33,50 @@ from .paths import (
 from .settings import effective_settings, load_settings, migrate_settings_file, remove_legacy_history_files
 
 # --- Linux: embed mpv through X11 ---
+FORCED_XCB = False
 if sys.platform.startswith("linux") and "QT_QPA_PLATFORM" not in os.environ and os.environ.get("DISPLAY"):
     os.environ["QT_QPA_PLATFORM"] = "xcb"
+    FORCED_XCB = True
+
+# Libraries Qt's X11 backend needs. Wayland-only desktops (Ubuntu 26.04) do not install them, and without
+# them Qt stops at once with no message. The portable Linux build bundles all of them (libxkbcommon-x11
+# together with its matching libxkbcommon); this check matters for runs from source.
+X11_RUNTIME_PACKAGES = {
+    "libxkbcommon-x11.so.0": "libxkbcommon-x11-0",
+    "libxcb-cursor.so.0": "libxcb-cursor0",
+    "libxcb-icccm.so.4": "libxcb-icccm4",
+    "libxcb-image.so.0": "libxcb-image0",
+    "libxcb-keysyms.so.1": "libxcb-keysyms1",
+    "libxcb-render-util.so.0": "libxcb-render-util0",
+    "libxcb-xkb.so.1": "libxcb-xkb1",
+}
+
+
+def missing_x11_libraries(bundled_dirs, loader=None):
+    """The X11 libraries above that are neither next to ALMP nor loadable from the system."""
+    if loader is None:
+        import ctypes
+        loader = ctypes.CDLL
+    missing = []
+    for name in X11_RUNTIME_PACKAGES:
+        if any(os.path.exists(os.path.join(d, name)) for d in bundled_dirs):
+            continue
+        try:
+            loader(name)
+        except OSError:
+            missing.append(name)
+    return missing
+
+
+def x11_missing_message(missing):
+    packages = " ".join(X11_RUNTIME_PACKAGES[m] for m in missing)
+    return ("ALMP needs a few X11 libraries that are not installed on this computer "
+            "(ALMP shows video inside its window through X11, also on Wayland).\n\n"
+            "Install them with your package manager, for example on Debian or Ubuntu:\n\n"
+            f"    sudo apt install {packages}\n\n"
+            "(Fedora: libxkbcommon-x11 xcb-util-cursor xcb-util-wm xcb-util-image xcb-util-keysyms "
+            "xcb-util-renderutil; Arch: libxkbcommon-x11 xcb-util-cursor.)\n\n"
+            "Missing: " + ", ".join(missing))
 
 
 # Qt 6.8+ reads the font list through DirectWrite, which opens every installed font the first time
@@ -110,6 +153,25 @@ def prepare_data_folder():
     return folder, portable, moved, log_mode
 
 
+def engine_missing_message(error, platform=None, bundled=False):
+    """What to tell the user when libmpv cannot be loaded. Linux: the portable build brings its own
+    (mpv-libs folder); a run from source uses the system's libmpv."""
+    platform = sys.platform if platform is None else platform
+    if platform.startswith("linux") and bundled:
+        return ("The playback engine (libmpv in the mpv-libs folder) could not be loaded.\n\n"
+                "Please unpack the WHOLE ALMP .tar.gz file again, and keep the mpv-libs folder next to "
+                "the ALMP program.\n\nDetails: " + str(error))
+    if platform.startswith("linux"):
+        return ("The playback engine (libmpv) could not be loaded.\n\n"
+                "ALMP for Linux uses your system's mpv library. Install it with your package manager, "
+                "for example on Debian or Ubuntu:\n\n    sudo apt install libmpv2\n\n"
+                "(Fedora: mpv-libs, Arch: mpv.)\n\nDetails: " + str(error))
+    return ("The playback engine (mpv-2.dll) could not be loaded.\n\n"
+            "Please extract the WHOLE ALMP zip file again into a folder on this computer, "
+            "and do not move ALMP.exe out of that folder. If your antivirus program removed "
+            "mpv-2.dll, restore it there.\n\nDetails: " + str(error))
+
+
 def main(argv=None):
     argv = list(sys.argv if argv is None else argv)
     _folder, _portable, _moved, log_mode = prepare_data_folder()
@@ -161,19 +223,28 @@ def main(argv=None):
     qpa = qt_platform_override(os.environ)
     if qpa:
         os.environ["QT_QPA_PLATFORM"] = qpa
+    if FORCED_XCB and os.environ.get("QT_QPA_PLATFORM") == "xcb":
+        missing = missing_x11_libraries([str(app_dir())])
+        if missing:
+            log.error("X11 libraries missing: %s", ", ".join(missing))
+            print(x11_missing_message(missing), file=sys.stderr)
+            if os.environ.get("WAYLAND_DISPLAY"):
+                os.environ["QT_QPA_PLATFORM"] = "wayland"       # only to show the message
+                _show_startup_error(x11_missing_message(missing))
+            return 1
     app = QApplication(argv)
     app.setApplicationName("ALMP")
     app.setApplicationVersion(__version__)
 
-    from .player import MPV_IMPORT_ERROR
+    from .player import MPV_IMPORT_ERROR, MPV_LIBRARY
     if MPV_IMPORT_ERROR is not None:
-        log.error("libmpv could not be loaded: %r", MPV_IMPORT_ERROR)
-        _show_startup_error(
-            "The playback engine (mpv-2.dll) could not be loaded.\n\n"
-            "Please extract the WHOLE ALMP zip file again into a folder on this computer, "
-            "and do not move ALMP.exe out of that folder. If your antivirus program removed "
-            "mpv-2.dll, restore it there.\n\nDetails: " + str(MPV_IMPORT_ERROR))
+        log.error("libmpv could not be loaded (%s): %r", MPV_LIBRARY, MPV_IMPORT_ERROR)
+        _show_startup_error(engine_missing_message(MPV_IMPORT_ERROR, bundled=MPV_LIBRARY != "system"))
         return 1
+    if sys.platform.startswith("linux"):
+        log.info("libmpv: %s", MPV_LIBRARY)
+        from . import x11_theme
+        x11_theme.install(app)          # dark window frames, like the dark title bar on Windows
 
     # Start listening for "open this file" requests before the window is built, so files
     # opened from Explorer while ALMP is still starting are not lost.

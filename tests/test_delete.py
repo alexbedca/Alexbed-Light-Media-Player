@@ -37,6 +37,8 @@ def test_recycle_bin_decision(drive_type, expected):
 def test_never_promise_recycle_bin_off_windows():
     assert main.recycle_bin_available("/home/a.mp3", platform="linux",
                                       drive_type_func=lambda p: main.DRIVE_FIXED) is False
+    assert main.recycle_bin_available("/Users/a.mp3", platform="darwin",
+                                      drive_type_func=lambda p: main.DRIVE_FIXED) is False
 
 
 def test_flags():
@@ -140,7 +142,8 @@ def test_recycle_ok_uses_safe_flags(fake_windows, tmp_path):
 
 
 def test_non_windows_never_deletes_without_permanent_consent(monkeypatch, tmp_path):
-    monkeypatch.setattr(main.sys, "platform", "linux")
+    # A system with no Recycle Bin/Trash support (macOS here; Linux has the Trash, see test_linux_port.py)
+    monkeypatch.setattr(main.sys, "platform", "darwin")
     f = tmp_path / "a.mp3"
     f.write_bytes(b"x")
     assert main.send_to_recycle_bin(str(f)) == main.DELETE_FAILED

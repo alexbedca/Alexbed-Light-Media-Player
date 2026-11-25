@@ -72,6 +72,7 @@ DEFAULTS = {
     "log_mode": "clear",           # v8.2.4: clear / keep / off
     "gapless": False,              # v8.2.4: gapless playback (prefetch the next track)
     "audio_exclusive": False,      # v8.2.4: WASAPI exclusive mode (bit-perfect)
+    "audio_exclusive_device": "",  # Linux: "" = through PipeWire (exclusive); "alsa/hdmi:..." = straight to it
     "upscaling": "standard",       # v8.2.4: standard / sharp / high
     "user_shaders": False,         # v8.2.5: load the user's own .glsl files (8.2.7: read only to migrate)
     "enhance": "auto",             # v8.2.7: picture sharpening for low-quality videos: auto / own / off
@@ -191,6 +192,8 @@ def effective_settings(raw):
     if en not in {v for _l, v in ENHANCE_CHOICES}:
         en = "own" if out["user_shaders"] else "auto"     # 8.2.5 "Use my own shaders" carries over
     out["enhance"] = en
+    dev = raw.get("audio_exclusive_device", "")
+    out["audio_exclusive_device"] = dev if isinstance(dev, str) and dev.startswith("alsa/") else ""
     rg = raw.get("replaygain", "off")
     out["replaygain"] = rg if rg in {v for _l, v in REPLAYGAIN_CHOICES} else "off"
     return out

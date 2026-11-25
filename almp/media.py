@@ -54,6 +54,36 @@ def is_audio_path(path):
     return file_ext(path) in AUDIO_EXTENSIONS
 
 
+def display_title(path):
+    """A file's name without its extension, as the media controls show it. Trailing dots and spaces
+    are dropped ("Tangled.2010..mp4" -> "Tangled.2010"; found on the Mint PC's sound applet)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return stem.rstrip(". ") or stem
+
+
+def audio_tags(path):
+    """{"title", "artist", "album"} from a music file's tags (only those it has). One small read with
+    mutagen; never raises."""
+    out = {}
+    try:
+        from mutagen import File as MutagenFile
+        audio = MutagenFile(path, easy=True)
+        tags = (audio.tags or {}) if audio is not None else {}
+        for key in ("title", "artist", "album"):
+            values = tags.get(key)
+            text = str(values[0]).strip() if values else ""
+            if text:
+                out[key] = text
+    except Exception:          # noqa: BLE001 - no tags is fine
+        log.debug("No tags read from %s", path, exc_info=True)
+    return out
+
+
+def audio_artist(path):
+    """The artist tag of a music file, or None."""
+    return audio_tags(path).get("artist")
+
+
 def decode_playlist_bytes(raw, fallback_encoding=None):
     """Playlists from Windows Media Player, Winamp and older tools are often in the old Windows
     ("ANSI") code page instead of UTF-8. Try UTF-8 (with or without BOM) first, then fall back."""

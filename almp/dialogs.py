@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Settings, Help and About windows. Plain words, big controls, everything reachable with Tab."""
 import platform
+import sys
 
 from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, Qt, QUrl
 from PyQt6.QtGui import QDesktopServices, QGuiApplication
@@ -37,6 +38,7 @@ from .settings import (
     VIDEO_SIZE_CHOICES,
 )
 
+IS_LINUX = sys.platform.startswith("linux")      # the Linux port shows a Linux section in Settings
 PROJECT_PAGE = "github.com/alexbedca/Alexbed-Light-Media-Player"
 RELEASES_PAGE = PROJECT_PAGE + "/releases"
 RELEASES_URL = "https://" + RELEASES_PAGE          # what "Copy link" puts on the clipboard (text only)
@@ -348,48 +350,51 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.scale_note)
         lay.addWidget(_line())
 
-        # --- Windows ---
-        lay.addWidget(_section("Windows"))
-        self.media_keys = QCheckBox("Media keys work while ALMP is in the background "
-                                    "(Windows media controls)")
-        self.media_keys.setChecked(bool(s["media_controls"]))
-        self.media_keys.toggled.connect(win.set_media_controls)
-        lay.addWidget(self.media_keys)
-        self.media_note = _note(win.media_controls_status_text())
-        lay.addWidget(self.media_note)
-
-        self.startup = QCheckBox("Start ALMP when I sign in to Windows")
-        self.startup.setChecked(win.startup_checkbox.isChecked())
-        self.startup.toggled.connect(win.startup_checkbox.setChecked)
-        win.startup_checkbox.toggled.connect(self._sync_startup)
-        lay.addWidget(self.startup)
-
-        can_reg = win.can_register_with_windows()
-        row = QHBoxLayout()
-        self.make_default = QPushButton("Make ALMP my default player...")
-        self.make_default.setEnabled(can_reg)
-        self.make_default.clicked.connect(win.make_default_player)
-        self.undo_default = QPushButton("Remove ALMP from Default apps")
-        self.undo_default.setEnabled(can_reg)
-        self.undo_default.clicked.connect(win.remove_default_player)
-        row.addWidget(self.make_default)
-        row.addWidget(self.undo_default)
-        row.addStretch(1)
-        lay.addLayout(row)
-        self.folder_verb = QCheckBox('Show "Play with ALMP" and "Add to ALMP playlist" when I right-click '
-                                     'files or a folder in Explorer')
-        self.folder_verb.setToolTip("Works with one or many selected audio and video files.\n"
-                                    'On Windows 11 they are under "Show more options" (or press Shift+F10).')
-        self.folder_verb.setEnabled(can_reg)
-        self.folder_verb.setChecked(win.folder_verb_installed())
-        self.folder_verb.toggled.connect(self._folder_verb_toggled)
-        lay.addWidget(self.folder_verb)
-        if not can_reg:
-            lay.addWidget(_note("These Windows options work in ALMP.exe on Windows only."))
+        if IS_LINUX:
+            self._add_linux_section(lay, win)
         else:
-            lay.addWidget(_note("These change settings for your Windows account only, and can be undone "
-                                "here or with Remove-ALMP-Defaults.bat."))
-        lay.addWidget(_line())
+            # --- Windows ---
+            lay.addWidget(_section("Windows"))
+            self.media_keys = QCheckBox("Media keys work while ALMP is in the background "
+                                        "(Windows media controls)")
+            self.media_keys.setChecked(bool(s["media_controls"]))
+            self.media_keys.toggled.connect(win.set_media_controls)
+            lay.addWidget(self.media_keys)
+            self.media_note = _note(win.media_controls_status_text())
+            lay.addWidget(self.media_note)
+
+            self.startup = QCheckBox("Start ALMP when I sign in to Windows")
+            self.startup.setChecked(win.startup_checkbox.isChecked())
+            self.startup.toggled.connect(win.startup_checkbox.setChecked)
+            win.startup_checkbox.toggled.connect(self._sync_startup)
+            lay.addWidget(self.startup)
+
+            can_reg = win.can_register_with_windows()
+            row = QHBoxLayout()
+            self.make_default = QPushButton("Make ALMP my default player...")
+            self.make_default.setEnabled(can_reg)
+            self.make_default.clicked.connect(win.make_default_player)
+            self.undo_default = QPushButton("Remove ALMP from Default apps")
+            self.undo_default.setEnabled(can_reg)
+            self.undo_default.clicked.connect(win.remove_default_player)
+            row.addWidget(self.make_default)
+            row.addWidget(self.undo_default)
+            row.addStretch(1)
+            lay.addLayout(row)
+            self.folder_verb = QCheckBox('Show "Play with ALMP" and "Add to ALMP playlist" when I right-click '
+                                         'files or a folder in Explorer')
+            self.folder_verb.setToolTip("Works with one or many selected audio and video files.\n"
+                                        'On Windows 11 they are under "Show more options" (or press Shift+F10).')
+            self.folder_verb.setEnabled(can_reg)
+            self.folder_verb.setChecked(win.folder_verb_installed())
+            self.folder_verb.toggled.connect(self._folder_verb_toggled)
+            lay.addWidget(self.folder_verb)
+            if not can_reg:
+                lay.addWidget(_note("These Windows options work in ALMP.exe on Windows only."))
+            else:
+                lay.addWidget(_note("These change settings for your Windows account only, and can be undone "
+                                    "here or with Remove-ALMP-Defaults.bat."))
+            lay.addWidget(_line())
 
         # --- Playback ---
         lay.addWidget(_section("Playback"))
@@ -496,13 +501,17 @@ class SettingsDialog(QDialog):
                                 "ALMP reads the start of the next track while this one plays.")
         self.gapless.toggled.connect(win.set_gapless)
         lay.addWidget(self.gapless)
-        self.exclusive = QCheckBox("Exclusive audio (WASAPI exclusive, bit-perfect)")
+        self.exclusive = QCheckBox("Exclusive audio (bit-perfect)" if IS_LINUX
+                                   else "Exclusive audio (WASAPI exclusive, bit-perfect)")
         self.exclusive.setChecked(bool(s["audio_exclusive"]))
         self.exclusive.toggled.connect(win.set_audio_exclusive)
         lay.addWidget(self.exclusive)
-        lay.addWidget(_note("For FLAC listeners with an external DAC or AV receiver: the sound goes to the "
-                            "device untouched (no Windows mixing). While ALMP plays, OTHER programs and "
-                            "Windows sounds are silent. ALMP's volume slider still works."))
+        if IS_LINUX:
+            self._add_linux_exclusive_output(lay, win, s)
+        else:
+            lay.addWidget(_note("For FLAC listeners with an external DAC or AV receiver: the sound goes to the "
+                                "device untouched (no Windows mixing). While ALMP plays, OTHER programs and "
+                                "Windows sounds are silent. ALMP's volume slider still works."))
         row = QHBoxLayout()
         lbl = QLabel("ReplayGain:")
         self.replaygain = QComboBox()
@@ -612,6 +621,78 @@ class SettingsDialog(QDialog):
     def _apply_scale_now(self):
         self.accept()
         self.win.restart_for_new_size()
+
+    def _add_linux_section(self, lay, win):
+        """Linux port: the app-menu entry ("Open With" in the file manager), default player and
+        autostart. All of it is for this user only (~/.local/share/applications, ~/.config/autostart)."""
+        lay.addWidget(_section("Linux"))
+        # Same order as the Windows section: background media keys first.
+        self.media_keys = QCheckBox("Media keys work while ALMP is in the background "
+                                    "(desktop media controls, MPRIS)")
+        self.media_keys.setChecked(bool(win.settings["media_controls"]))
+        self.media_keys.toggled.connect(win.set_media_controls)
+        lay.addWidget(self.media_keys)
+        self.media_note = _note(win.media_controls_status_text())
+        lay.addWidget(self.media_note)
+        can_reg = win.can_register_with_desktop()
+        self.menu_entry = QCheckBox('Show ALMP in the app menu and in "Open With" in the file manager')
+        self.menu_entry.setEnabled(can_reg)
+        self.menu_entry.setChecked(win.desktop_entry_installed())
+        self.menu_entry.toggled.connect(self._menu_entry_toggled)
+        lay.addWidget(self.menu_entry)
+        row = QHBoxLayout()
+        self.make_default = QPushButton("Make ALMP my default player")
+        self.make_default.setEnabled(can_reg)
+        self.make_default.clicked.connect(win.make_default_player)
+        row.addWidget(self.make_default)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self.startup = QCheckBox("Start ALMP when I sign in")
+        self.startup.setChecked(win.startup_checkbox.isChecked())
+        self.startup.toggled.connect(win.startup_checkbox.setChecked)
+        win.startup_checkbox.toggled.connect(self._sync_startup)
+        lay.addWidget(self.startup)
+        if not can_reg:
+            lay.addWidget(_note("These options work in the built ALMP program only (not python main.py)."))
+        else:
+            lay.addWidget(_note("These change settings for your Linux account only. Turning the menu entry "
+                                "off also undoes the default player."))
+        lay.addWidget(_line())
+
+    def _add_linux_exclusive_output(self, lay, win, s):
+        """Linux: where "Exclusive audio" sends the sound. PipeWire (exclusive) works everywhere; a direct
+        device (HDMI to a TV/receiver, analog out, USB DAC) bypasses PipeWire and is bit-perfect."""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Output:"))
+        self.exclusive_output = QComboBox()
+        self.exclusive_output.addItem("Through PipeWire (exclusive)", "")
+        current = s.get("audio_exclusive_device", "")
+        names = []
+        for name, description in win.exclusive_device_choices():
+            self.exclusive_output.addItem(f"Direct: {description}", name)
+            names.append(name)
+        if current and current not in names:
+            self.exclusive_output.addItem(f"Direct: {current} (not connected now)", current)
+        index = self.exclusive_output.findData(current)
+        self.exclusive_output.setCurrentIndex(max(0, index))
+        self.exclusive_output.setEnabled(self.exclusive.isChecked())
+        self.exclusive.toggled.connect(self.exclusive_output.setEnabled)
+        self.exclusive_output.currentIndexChanged.connect(
+            lambda _i: win.set_exclusive_device(self.exclusive_output.currentData() or ""))
+        row.addWidget(self.exclusive_output, 1)
+        lay.addLayout(row)
+        lay.addWidget(_note("For FLAC listeners with an external DAC, AV receiver or TV: the sound goes to the "
+                            "device untouched (no PipeWire mixing with a Direct output). While ALMP plays, OTHER "
+                            "programs and system sounds are silent on that output. ALMP's volume slider still "
+                            "works (bit-perfect at 100%). If the device is busy, ALMP plays through PipeWire and "
+                            "says so."))
+
+    def _menu_entry_toggled(self, on):
+        ok = self.win.set_desktop_entry(on)
+        if not ok:
+            self.menu_entry.blockSignals(True)
+            self.menu_entry.setChecked(not on)
+            self.menu_entry.blockSignals(False)
 
     def _sync_startup(self, checked):
         try:

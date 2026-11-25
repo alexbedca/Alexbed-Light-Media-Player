@@ -1,3 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 *.glsl -text
+*.sh text eol=lf
+tools/linux-vm/* text eol=lf
