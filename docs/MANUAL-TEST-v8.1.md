@@ -132,6 +132,10 @@ Legend: **[ ]** to do. "Expected" says what must happen. If something else happe
 - [ ] Opening a file from Explorer while ALMP is still starting: the file arrives and plays.
 - [ ] ALMP never connects to the internet (for example with the network cable unplugged, or watch it in a firewall).
 
+## 15. New in 8.2.9
+- [ ] Windows Settings > Personalisation > Colours > Light, open ALMP > Settings: dark page, all headings
+      and texts readable. Back to Dark: same look as before.
+
 ## 14. New in 8.2.8
 - [ ] Pin ALMP to the taskbar, close it, start it from the pin, then open a song from Explorer (ALMP open and
       closed): only one ALMP button, on the pin.

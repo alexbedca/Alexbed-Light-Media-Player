@@ -67,6 +67,7 @@ BASE_QSS = """
     QMenu::item:disabled { color: #8a9499; }
     QMenu::separator { height: 1px; background: #2c3236; margin: 6px 8px; }
     QMainWindow, QDialog, QMessageBox { background-color: #121212; }
+    #settingsScroll, #settingsScroll > QWidget, #settingsPage { background-color: #121212; }
     QLabel, QCheckBox, QRadioButton { background: transparent; }
     #leftPanel { background-color: #000000; }
     #videoSurface { background-color: #000000; border: none; }
@@ -163,6 +164,7 @@ BASE_QSS = """
 # Applied on top of BASE_QSS. Black, white and yellow only; focus is cyan so it differs from selection.
 HIGH_CONTRAST_QSS = """
     QMainWindow, QDialog, QMessageBox { background-color: #000000; }
+    #settingsScroll, #settingsScroll > QWidget, #settingsPage { background-color: #000000; }
     QWidget { color: #ffffff; }
     #leftPanel, #rightPanel { background-color: #000000; }
     #rightPanel { border-left: 2px solid #ffffff; }

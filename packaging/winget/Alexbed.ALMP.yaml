@@ -1,4 +1,4 @@
-# DRAFT winget manifest (singleton format) for ALMP 8.2.8 - NOT submitted.
+# DRAFT winget manifest (singleton format) for ALMP 8.2.9 - NOT submitted.
 # Before submitting to https://github.com/microsoft/winget-pkgs:
 #   1. Replace InstallerUrl with the real release asset URL of the zip you published.
 #   2. Replace InstallerSha256 with that exact zip's SHA-256 (from the Actions run summary).
@@ -8,7 +8,7 @@
 #      defaultLocale files); `wingetcreate new <url>` can generate those from this information.
 # See packaging/README.md.
 PackageIdentifier: Alexbed.ALMP
-PackageVersion: 8.2.8
+PackageVersion: 8.2.9
 PackageLocale: en-US
 Publisher: Alexander Bediako
 PublisherUrl: https://github.com/alexbedca
@@ -31,15 +31,15 @@ Tags:
   - accessibility
   - portable
   - offline
-ReleaseNotesUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/tag/v8.2.8
+ReleaseNotesUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/tag/v8.2.9
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
-  - RelativeFilePath: ALMP-v8.2.8-Portable\ALMP.exe
+  - RelativeFilePath: ALMP-v8.2.9-Portable\ALMP.exe
     PortableCommandAlias: almp
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.2.8/ALMP-v8.2.8-Portable.zip
-    InstallerSha256: 026BDC08BF5B3EF91E9A335607181C46DF36BAB481DF29F5C1F88BC856F65C01
+    InstallerUrl: https://github.com/alexbedca/Alexbed-Light-Media-Player/releases/download/v8.2.9/ALMP-v8.2.9-Portable.zip
+    InstallerSha256: 12CD4A4378A382DC53544732C8B49FD63F9B5C5AE7D2852E9A385F97289D51F6
 ManifestType: singleton
 ManifestVersion: 1.6.0
