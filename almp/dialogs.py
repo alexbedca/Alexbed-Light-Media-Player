@@ -293,9 +293,11 @@ class SettingsDialog(QDialog):
         s = win.settings
         outer = QVBoxLayout(self)
         scroll = QScrollArea()
+        scroll.setObjectName("settingsScroll")      # themed: else Windows light mode paints it near-white
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         page = QWidget()
+        page.setObjectName("settingsPage")
         lay = QVBoxLayout(page)
         lay.setSpacing(8)
         scroll.setWidget(page)

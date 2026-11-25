@@ -7,7 +7,7 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen](images/screenshot-v8.2-welcome.png)
 
-![ALMP 8.2.8 playing music: several playlist items selected, All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.8-window.png)
+![ALMP 8.2.9 playing music: several playlist items selected, All / Video / Audio filter and the format of the playing track](images/screenshot-v8.2.9-window.png)
 
 ![ALMP 8.2 playing a video: quick-access buttons, Settings (gear) and Loop](images/screenshot-v8.2-playing.png)
 
@@ -17,7 +17,11 @@ and no accounts, ads or tracking.
 
 ![ALMP 8.2 start screen in fullscreen on a big screen or TV](images/screenshot-v8.2-fullscreen.png)
 
-**Version:** 8.2.8 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+**Version:** 8.2.9 &nbsp;|&nbsp; **Author:** Alexander Bediako &nbsp;|&nbsp; **Licence:** [GPL-3.0-or-later](LICENSE)
+
+**New in 8.2.9:** the Settings window is readable again when Windows uses **light** mode (its page was
+near-white under ALMP's light text). Dark mode looked right before and is unchanged. See the
+[release notes](docs/release-notes/v8.2.9.md).
 
 **New in 8.2.8:** one taskbar button: with ALMP pinned to the taskbar, playing a file no longer opens a second
 ALMP button next to the pin. And no more freeze of about 14 s after opening a downloaded video whose name has

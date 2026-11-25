@@ -662,3 +662,21 @@ def test_about_engine_line_reads_mpv_runtime_properties():
     assert describe_engine(Player()) == "Playback engine: mpv v0.40.0, FFmpeg n7.1"
     assert describe_engine(None) == ""
     assert describe_engine(object()) == ""
+
+# --- Settings page in Windows light mode (found by the Linux port, 2026-11-24) ---------------
+
+def test_settings_page_has_the_dark_theme_background():
+    # In Windows light mode the page inside the Settings scroll area took the system's near-white
+    # palette (243,243,243), so ALMP's light text was hard to read. The theme now colours it.
+    from almp.theme import stylesheet
+    for hc, colour in ((False, "#121212"), (True, "#000000")):
+        rule = "#settingsScroll, #settingsScroll > QWidget, #settingsPage { background-color: " + colour
+        assert rule in stylesheet(hc)
+
+
+def test_settings_page_uses_the_themed_names(win):
+    from almp import dialogs
+    d = dialogs.SettingsDialog(win)
+    assert d.findChild(dialogs.QScrollArea, "settingsScroll") is not None
+    assert d._page.objectName() == "settingsPage"
+    d.close()
