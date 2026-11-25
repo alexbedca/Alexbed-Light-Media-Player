@@ -156,6 +156,8 @@ and asks whether to delete ALMP's settings and log files too. Then delete the AL
 
 ## Download and run (Linux)
 
+![ALMP 8.3.0 on Linux (Debian 13, GNOME) playing a 24-bit / 96 kHz FLAC](images/screenshot-v8.3.0-linux.png)
+
 ALMP for Linux is **portable, like the Windows zip: nothing to install.** The playback engine (mpv with
 its FFmpeg libraries) is inside the folder.
 
